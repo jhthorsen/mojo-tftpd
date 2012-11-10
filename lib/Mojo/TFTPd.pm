@@ -2,7 +2,7 @@ package Mojo::TFTPd;
 
 =head1 NAME
 
-Mojo::TFTPd - TFTP server using Mojo::IOLoop
+Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 =head1 VERSION
 
@@ -13,15 +13,43 @@ Mojo::TFTPd - TFTP server using Mojo::IOLoop
     use Mojo::TFTPd;
     my $tftpd = Mojo::TFTPd->new;
 
+    $tftpd->on(error => sub {
+        warn "TFTPd: $_[1]\n";
+    });
+
     $tftpd->on(rrq => sub {
         my($tftpd, $c) = @_;
         open my $FH, '<', $c->file;
         $c->filehandle($FH);
     });
 
+    $tftpd->on(wrq => sub {
+        my($tftpd, $c) = @_;
+        open my $FH, '>', '/dev/null';
+        $c->filehandle($FH);
+    });
+
+    $self->on(finish => sub {
+        my($tftpd, $c, $error) = @_;
+        warn "Connection: $error\n" if $error;
+    });
+
     $tftpd->start;
+    $tftpd->ioloop->start unless $tftpd->ioloop->is_running;
 
 =head1 DESCRIPTION
+
+This module implement a server for the
+L<Trivial File Transfer Protocol|http://en.wikipedia.org/wiki/Trivial_File_Transfer_Protocol>.
+
+From Wikipedia:
+
+    Trivial File Transfer Protocol (TFTP) is a file transfer protocol notable
+    for its simplicity. It is generally used for automated transfer of
+    configuration or boot files between machines in a local environment.
+
+The connection ($c) which is referred to in this document is an instance of
+L<Mojo::TFTPd::Connection>.
 
 =cut
 
@@ -48,23 +76,40 @@ our $VERSION = '0.01';
     $self->on(error => sub {
         my($self, $str) = @_;
     });
-    $self->on(error => sub {
-        my($self, $str, $connection, $code) = @_;
+
+This event is emitted when something goes wrong: Fail to L</listen> to socket,
+read from socket or other internal errors.
+
+=head2 finish
+
+    $self->on(finish => sub {
+        my($self, $c, $error) = @_;
     });
+
+This event is emitted when the client finish, either successfully or due to an
+error. C<$error> will be an empty string on success.
 
 =head2 rrq
 
     $self->on(rrq => sub {
-        my($self, $connection) = @_;
+        my($self, $c) = @_;
     });
+
+This event is emitted when a new read request arrives from a client. The
+callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
+will be dropped.
 
 =head2 wrq
 
     $self->on(wrq => sub {
-        my($self, $connection) = @_;
+        my($self, $c) = @_;
     });
 
-=head2 ATTRIBUTES
+This event is emitted when a new write request arrives from a client. The
+callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
+will be dropped.
+
+=head1 ATTRIBUTES
 
 =head2 ioloop
 
@@ -78,7 +123,9 @@ has ioloop => sub { Mojo::IOLoop->singleton };
 
     $str = $self->server;
     $self->server("127.0.0.1:69");
-    $self->server("tftp://*:69");
+    $self->server("tftp://*:69"); # any interface
+
+The bind address for this server.
 
 =cut
 
@@ -94,7 +141,8 @@ has max_connections => 1000;
 
 =head2 retries
 
-How many times the server should try to send ACK or DATA to the client.
+How many times the server should try to send ACK or DATA to the client before
+dropping the L<connection|Mojo::TFTPd::Connection>.
 
 =cut
 
@@ -102,7 +150,7 @@ has retries => 2;
 
 =head2 inactive_timeout
 
-How long a connection can stay idle.
+How long a L<connection|Mojo::TFTPd::Connection> can stay idle before
 
 =cut
 
@@ -112,27 +160,19 @@ has inactive_timeout => 15;
 
 =head2 start
 
-Sets up the server asynchronously. Watch for L</error> to see if everything is
-ok.
+Sets up the server asynchronously. The L</error> event wille be fired unless
+this server could start.
 
 =cut
 
 sub start {
     my $self = shift;
-
-    $self->{connections} and return;
-    $self->{connections} = {};
-    $self->ioloop->timer(0 => sub { $self->_start });
-    $self;
-}
-
-sub _start {
-    my $self = shift;
     my $reactor = $self->ioloop->reactor;
     my $url = $self->listen;
-    my $handle;
+    my $socket;
 
-    Scalar::Util::weaken($self);
+    $self->{connections} and return $self;
+    $self->{connections} = {};
 
     if($url =~ /^tftp/) {
         $url = Mojo::URL->new($url);
@@ -142,42 +182,46 @@ sub _start {
     }
 
     warn "[Mojo::TFTPd] Listen to $url\n" if DEBUG;
-    $handle = IO::Socket::INET->new(
+
+    $socket = IO::Socket::INET->new(
                   LocalAddr => $url->host eq '*' ? '0.0.0.0' : $url->host,
                   LocalPort => $url->port,
                   Proto => 'udp',
               );
 
-    if(!$handle) {
+    if(!$socket) {
+        delete $self->{connections};
         return $self->emit(error => "Can't create listen socket: $!");
     };
 
-    $handle->blocking(0);
-    $reactor->io($handle, sub { $self->_incoming });
-    $reactor->watch($handle, 1, 0); # watch read events
-    $self->{handle} = $handle;
+    Scalar::Util::weaken($self);
 
-    $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL, sub {
-        my $time = time;
-        for my $c (values %{ $self->{connections} }) {
-            $self->_delete_connection($c->[1]) if $c->[0] < $time;
-        }
-    });
+    $socket->blocking(0);
+    $reactor->io($socket, sub { $self->_incoming });
+    $reactor->watch($socket, 1, 0); # watch read events
+    $self->{socket} = $socket;
+    $self->{checker}
+        = $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL, sub {
+            my $time = time - $self->inactive_timeout;
+            for my $c (values %{ $self->{connections} }) {
+                $self->_delete_connection($c) if $c->{timestamp} < $time;
+            }
+        });
+
+    return $self;
 }
 
 sub _incoming {
     my $self = shift;
-    my $handle = $self->{handle};
-    my $read = $handle->recv(my $datagram, DATAGRAM_LENGTH);
+    my $socket = $self->{socket};
+    my $read = $socket->recv(my $datagram, DATAGRAM_LENGTH);
     my($opcode, $connection);
 
     if(!defined $read) {
-        return $self->emit(error => $! || 'Undefined read error');
+        return $self->emit(error => "Read: $!");
     }
 
     $opcode = unpack 'n', substr $datagram, 0, 2, '';
-
-    warn "[Mojo::TFTPd] <<< [@{[$handle->peerhost]}] $opcode $datagram\n" if DEBUG;
 
     # new connection
     if($opcode eq OPCODE_RRQ) {
@@ -188,36 +232,39 @@ sub _incoming {
     }
 
     # existing connection
-    $connection = $self->{connections}{$handle->peername};
+    $connection = $self->{connections}{$socket->peername};
 
     if(!$connection) {
-        return $self->emit(error => "Connection is missing.");
+        $self->emit(error => "@{[$socket->peerhost]} has no connection.");
     }
     elsif($opcode == OPCODE_ACK) {
-        $connection->[1]->receive_ack($datagram)
-            or return $self->_delete_connection($connection->[1]);
-        $connection->[1]->send_data;
+        $connection->receive_ack($datagram)
+            or return $self->_delete_connection($connection);
+        $connection->send_data;
     }
     elsif($opcode == OPCODE_DATA) {
-        $connection->[1]->receive_data($datagram)
-            or return $self->_delete_connection($connection->[1]);
-        $connection->[1]->send_ack;
+        $connection->receive_data($datagram)
+            or return $self->_delete_connection($connection);
+        $connection->send_ack;
     }
     elsif($opcode == OPCODE_ERROR) {
         my($code, $msg) = unpack 'nZ*', $datagram;
-        return $self->emit(error => $msg, $connection->[1], $code);
+        $connection->error("($code) $msg");
+        $self->_delete_connection($connection);
     }
     else {
-        return $self->emit(error => "Unknown opcode: $opcode", $connection->[1], 0);
+        $connection->error("Unknown opcode");
+        $self->_delete_connection($connection);
     }
-
-    $connection->[0] = time + $self->inactive_timeout;
 }
 
 sub _new_request {
     my($self, $type, $opcode, $datagram) = @_;
     my($file, $mode, @rfc) = split "\0", $datagram;
+    my $socket = $self->{socket};
     my $connection;
+
+    warn "[Mojo::TFTPd] <<< @{[$socket->peerhost]} $type $file $mode @rfc\n" if DEBUG;
 
     if(!$self->has_subscribers($type)) {
         $self->emit(error => "Cannot handle $type requests");
@@ -232,29 +279,30 @@ sub _new_request {
                         file => $file,
                         mode => $mode,
                         opcode => $opcode,
-                        handle => $self->{handle},
-                        peername => $self->{handle}->peername,
+                        socket => $socket,
+                        peername => $socket->peername,
+                        peerhost => $socket->peerhost,
                         retries => $self->retries,
                         rfc => \@rfc,
                     );
 
-    $self->{connections}{$connection->peername} = [time + $self->inactive_timeout, $connection ];
+    $self->{connections}{$connection->peername} = $connection;
     $self->emit($type => $connection);
     return $type eq 'rrq' ? $connection->send_data : $connection->send_ack;
 }
 
 sub _delete_connection {
     my($self, $connection) = @_;
-
     delete $self->{connections}{$connection->peername};
+    $self->emit(finish => $connection, $connection->error);
 }
 
 sub DEMOLISH {
     my $self = shift;
     my $reactor = eval { $self->ioloop->reactor } or return; # may be undef during global destruction
-    my $handle = $self->{handle} or return;
 
-    $reactor->remove($handle);
+    $reactor->remove($self->{checker}) if $self->{checker};
+    $reactor->remove($self->{socket}) if $self->{socket};
 }
 
 =head1 AUTHOR
