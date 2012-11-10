@@ -63,7 +63,7 @@ use constant OPCODE_DATA => 3;
 use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
 use constant OPCODE_OACK => 6;
-use constant CHECK_INACTIVE_INTERVAL => 5;
+use constant CHECK_INACTIVE_INTERVAL => $ENV{MOJO_TFTPD_CHECK_INACTIVE_INTERVAL} || 3;
 use constant DATAGRAM_LENGTH => $ENV{MOJO_TFTPD_DATAGRAM_LENGTH} || 512;
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
@@ -146,7 +146,7 @@ dropping the L<connection|Mojo::TFTPd::Connection>.
 
 =cut
 
-has retries => 2;
+has retries => 1;
 
 =head2 inactive_timeout
 
@@ -160,8 +160,8 @@ has inactive_timeout => 15;
 
 =head2 start
 
-Sets up the server asynchronously. The L</error> event wille be fired unless
-this server could start.
+Starts listening to the address and port set in L</Listen>. The L</error>
+event wille be emitted if the server fail to start.
 
 =cut
 
@@ -201,10 +201,12 @@ sub start {
     $reactor->watch($socket, 1, 0); # watch read events
     $self->{socket} = $socket;
     $self->{checker}
-        = $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL, sub {
-            my $time = time - $self->inactive_timeout;
+        = $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL || 3, sub {
+            my $timeout = time - $self->inactive_timeout;
             for my $c (values %{ $self->{connections} }) {
-                $self->_delete_connection($c) if $c->{timestamp} < $time;
+                $timeout < $c->{timestamp} and next;
+                $c->error('Inactive timeout');
+                $self->_delete_connection($c);
             }
         });
 
@@ -225,41 +227,38 @@ sub _incoming {
 
     # new connection
     if($opcode eq OPCODE_RRQ) {
-        return $self->_new_request(rrq => $opcode, $datagram);
+        return $self->_new_request(rrq => $datagram);
     }
     elsif($opcode eq OPCODE_WRQ) {
-        return $self->_new_request(wrq => $opcode, $datagram);
+        return $self->_new_request(wrq => $datagram);
     }
 
     # existing connection
     $connection = $self->{connections}{$socket->peername};
 
     if(!$connection) {
-        $self->emit(error => "@{[$socket->peerhost]} has no connection.");
+        return $self->emit(error => "@{[$socket->peerhost]} has no connection");
     }
     elsif($opcode == OPCODE_ACK) {
-        $connection->receive_ack($datagram)
-            or return $self->_delete_connection($connection);
-        $connection->send_data;
+        return if $connection->receive_ack($datagram) and $connection->send_data;
     }
     elsif($opcode == OPCODE_DATA) {
-        $connection->receive_data($datagram)
-            or return $self->_delete_connection($connection);
-        $connection->send_ack;
+        return if $connection->receive_data($datagram) and $connection->send_ack;
     }
     elsif($opcode == OPCODE_ERROR) {
         my($code, $msg) = unpack 'nZ*', $datagram;
         $connection->error("($code) $msg");
-        $self->_delete_connection($connection);
     }
     else {
         $connection->error("Unknown opcode");
-        $self->_delete_connection($connection);
     }
+
+    # if something goes wrong or finish with connection
+    $self->_delete_connection($connection);
 }
 
 sub _new_request {
-    my($self, $type, $opcode, $datagram) = @_;
+    my($self, $type, $datagram) = @_;
     my($file, $mode, @rfc) = split "\0", $datagram;
     my $socket = $self->{socket};
     my $connection;
@@ -270,25 +269,29 @@ sub _new_request {
         $self->emit(error => "Cannot handle $type requests");
         return;
     }
-    if($self->max_connections < keys %{ $self->{connections} }) {
-        $self->emit(error => "Max connections reached");
+    if($self->max_connections <= keys %{ $self->{connections} }) {
+        $self->emit(error => "Max connections ($self->{max_connections}) reached");
         return;
     }
 
     $connection = Mojo::TFTPd::Connection->new(
                         file => $file,
                         mode => $mode,
-                        opcode => $opcode,
-                        socket => $socket,
-                        peername => $socket->peername,
                         peerhost => $socket->peerhost,
+                        peername => $socket->peername,
                         retries => $self->retries,
                         rfc => \@rfc,
+                        socket => $socket,
                     );
 
-    $self->{connections}{$connection->peername} = $connection;
     $self->emit($type => $connection);
-    return $type eq 'rrq' ? $connection->send_data : $connection->send_ack;
+
+    if($type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
+        $self->{connections}{$connection->peername} = $connection;
+    }
+    else {
+        $self->emit(finish => $connection, $connection->error);
+    }
 }
 
 sub _delete_connection {

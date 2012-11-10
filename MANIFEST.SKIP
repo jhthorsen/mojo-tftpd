@@ -1,4 +1,5 @@
 ^mypp.yml
+cover_db
 .git
 \.old
 \.swp

@@ -15,7 +15,7 @@ use Socket;
 use constant OPCODE_DATA => 3;
 use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
-use constant DATAGRAM_LENGTH => $ENV{MOJO_TFTPD_DATAGRAM_LENGTH} || 512;
+use constant DATA_LENGTH => ($ENV{MOJO_TFTPD_DATAGRAM_LENGTH} || 512) - 4;
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
 our %ERROR_CODES = (
@@ -51,6 +51,14 @@ event or the connection will be dropped.
 
 Either "ascii", "octet" or empty string if unknown.
 
+=head2 peerhost
+
+The IP address of the remove client.
+
+=head2 peername
+
+Packet address of the remote client.
+
 =head2 retries
 
 Number of times L</send_data> or L</send_ack> can be retried before the
@@ -71,11 +79,11 @@ has error => '';
 has file => '/dev/null';
 has filehandle => undef;
 has mode => '';
-has opcode => 0;
+has peerhost => '';
 has peername => '';
 has retries => 2;
-has socket => undef;
 has rfc => sub { [] };
+has socket => undef;
 has _sequence_number => 1;
 
 =head1 METHODS
@@ -97,17 +105,17 @@ sub send_data {
     if(!$FH) {
         return $self->send_error(file_not_found => 'No filehandle');
     }
-    elsif(not seek $FH, ($n - 1) * DATAGRAM_LENGTH, 0) {
+    elsif(not seek $FH, ($n - 1) * DATA_LENGTH, 0) {
         return $self->send_error(file_not_found => "Seek: $!");
     }
-    if(not defined read $FH, $data, DATAGRAM_LENGTH) {
+    if(not defined read $FH, $data, DATA_LENGTH) {
         return $self->send_error(file_not_found => "Read: $!");
     }
-    if(0 == length $data and 1 < $n) {
-        return 1;
+    if(length $data < DATA_LENGTH) {
+        $self->{_last_sequence_number} = $n;
     }
 
-    warn "[Mojo::TFTPd] >>> $self->{peerhost} data $n\n" if DEBUG;
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
 
     $sent = $self->socket->send(
                 pack('nna*', OPCODE_DATA, $n, $data),
@@ -115,6 +123,7 @@ sub send_data {
                 $self->peername,
             );
 
+    return 0 unless length $data;
     return 1 if $sent;
     $self->error("Send: $!");
     return $self->{retries}--;
@@ -132,7 +141,8 @@ sub receive_ack {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n\n" if DEBUG;
 
-    return ++$self->{_sequence_number} if $n == $self->_sequence_number;
+    return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
+    return ++$self->{_sequence_number} if $n == $self->{_sequence_number};
     $self->error('Invalid packet number');
     return $self->{retries}--;
 }
@@ -148,7 +158,7 @@ sub receive_data {
     my($n, $data) = unpack 'na*', shift;
     my $FH = $self->filehandle;
 
-    warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n\n" if DEBUG;
+    warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
 
     unless($FH) {
         return $self->send_error(illegal_operation => 'No filehandle');
@@ -160,6 +170,9 @@ sub receive_data {
     unless(print $FH $data) {
         return $self->send_error(illegal_operation => "Write: $!");
     };
+    unless(length $data == DATA_LENGTH) {
+        $self->{_last_sequence_number} = $n;
+    }
 
     $self->{_sequence_number}++;
     return 1;
@@ -185,6 +198,7 @@ sub send_ack {
                 $self->peername,
             );
 
+    return 0 if defined $self->{_last_sequence_number};
     return 1 if $sent;
     $self->error("Send: $!");
     return $self->{retries}--;
@@ -200,7 +214,9 @@ sub send_error {
     my($self, $name) = @_;
     my $err = $ERROR_CODES{$name} || $ERROR_CODES{not_defined};
 
-    $self->error($_[1]);
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} error @$err\n" if DEBUG;
+
+    $self->error($_[2]);
     $self->socket->send(
         pack('nnZ*', OPCODE_ERROR, @$err),
         MSG_DONTWAIT,
