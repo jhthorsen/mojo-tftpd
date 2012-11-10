@@ -1,0 +1,64 @@
+NAME
+    Mojo::TFTPd - TFTP server using Mojo::IOLoop
+
+VERSION
+    0.01
+
+SYNOPSIS
+        use Mojo::TFTPd;
+        my $tftpd = Mojo::TFTPd->new;
+
+        $tftpd->on(rrq => sub {
+            my($tftpd, $c) = @_;
+            open my $FH, '<', $c->file;
+            $c->filehandle($FH);
+        });
+
+        $tftpd->start;
+
+DESCRIPTION
+EVENTS
+  error
+        $self->on(error => sub {
+            my($self, $str) = @_;
+        });
+        $self->on(error => sub {
+            my($self, $str, $connection, $code) = @_;
+        });
+
+  rrq
+        $self->on(rrq => sub {
+            my($self, $connection) = @_;
+        });
+
+  wrq
+        $self->on(wrq => sub {
+            my($self, $connection) = @_;
+        });
+
+  ATTRIBUTES
+  ioloop
+    Holds an instance of Mojo::IOLoop.
+
+  listen
+        $str = $self->server;
+        $self->server("127.0.0.1:69");
+        $self->server("tftp://*:69");
+
+  max_connections
+    How many concurrent connections this server can handle. Default to 1000.
+
+  retries
+    How many times the server should try to send ACK or DATA to the client.
+
+  inactive_timeout
+    How long a connection can stay idle.
+
+METHODS
+  start
+    Sets up the server asynchronously. Watch for "error" to see if
+    everything is ok.
+
+AUTHOR
+    Jan Henning Thorsen - "jhthorsen@cpan.org"
+
