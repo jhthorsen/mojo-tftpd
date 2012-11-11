@@ -138,8 +138,8 @@ How long a L<connection|Mojo::TFTPd::Connection> can stay idle before
 
 =head2 start
 
-Sets up the server asynchronously. The L</error> event wille be fired unless
-this server could start.
+Starts listening to the address and port set in L</Listen>. The L</error>
+event wille be emitted if the server fail to start.
 
 
 =cut
