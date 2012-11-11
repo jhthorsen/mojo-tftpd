@@ -103,8 +103,8 @@ ATTRIBUTES
 
 METHODS
   start
-    Sets up the server asynchronously. The "error" event wille be fired
-    unless this server could start.
+    Starts listening to the address and port set in "Listen". The "error"
+    event wille be emitted if the server fail to start.
 
 AUTHOR
     Jan Henning Thorsen - "jhthorsen@cpan.org"
