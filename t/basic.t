@@ -67,17 +67,31 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
     $DATA = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "rrq.bin", "ascii";
     $tftpd->_incoming;
     isa_ok $tftpd->{connections}{whatever}, 'Mojo::TFTPd::Connection';
-    is $DATA, pack('nna*', 3, 1, (1 x 507). "\n"), 'rrq.bin was sent';
+    is $DATA, pack('nna*', 3, 1, (1 x 511). "\n"), 'rrq.bin was sent';
 
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 4);
     $tftpd->_incoming;
     is $tftpd->{connections}{whatever}{retries}, 5, 'retrying';
-    is $DATA, pack('nna*', 3, 1, (1 x 507). "\n"), 'rrq.bin was sent again';
+    is $DATA, pack('nna*', 3, 1, (1 x 511). "\n"), 'rrq.bin was sent again';
 
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
     $tftpd->_incoming;
     is $DATA, pack('nna*', 3, 2, ''), 'empty data was sent';
     ok !$tftpd->{connections}{whatever}, 'rrq connection is completed';
+}
+
+{
+    $DATA = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "150abcd", "ascii";
+    $tftpd->_incoming;
+    isa_ok $tftpd->{connections}{whatever}, 'Mojo::TFTPd::Connection';
+    is $DATA, pack('nna*', 3, 1, ('abcd' x 128)), 'first block was sent';
+
+    $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
+    $tftpd->_incoming;
+    is $DATA, pack('nna*', 3, 2, ('abcd' x 22)), 'second block was sent';
+    $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 2);
+    $tftpd->_incoming;
+    ok !$tftpd->{connections}{whatever}, '150abcd connection is completed';
 }
 
 {
@@ -103,9 +117,9 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
     isa_ok $tftpd->{connections}{whatever}, 'Mojo::TFTPd::Connection';
     is $DATA, pack('nn', 4, 0), 'ack on test.swp';
 
-    $DATA = pack('nna*', Mojo::TFTPd::OPCODE_DATA, 1, ("a" x 508));
+    $DATA = pack('nna*', Mojo::TFTPd::OPCODE_DATA, 1, ("a" x 512));
     $tftpd->_incoming;
-    is $DATA, pack('nn', 4, 1), 'ack on a x 508';
+    is $DATA, pack('nn', 4, 1), 'ack on a x 512';
 
     $DATA = pack('nna*', Mojo::TFTPd::OPCODE_DATA, 2, ("a" x 400));
     $tftpd->_incoming;

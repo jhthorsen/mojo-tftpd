@@ -63,7 +63,7 @@ use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
 use constant OPCODE_OACK => 6;
 use constant CHECK_INACTIVE_INTERVAL => $ENV{MOJO_TFTPD_CHECK_INACTIVE_INTERVAL} || 3;
-use constant DATAGRAM_LENGTH => $ENV{MOJO_TFTPD_DATAGRAM_LENGTH} || 512;
+use constant MAX_BLOCK_SIZE => 65464; # From RFC 2348
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
 our $VERSION = eval '0.01';
@@ -210,7 +210,7 @@ sub start {
 sub _incoming {
     my $self = shift;
     my $socket = $self->{socket};
-    my $read = $socket->recv(my $datagram, DATAGRAM_LENGTH);
+    my $read = $socket->recv(my $datagram, MAX_BLOCK_SIZE + 4); # Add 4 Bytes of Opcode + Block#
     my($opcode, $connection);
 
     if(!defined $read) {
