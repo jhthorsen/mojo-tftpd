@@ -15,7 +15,6 @@ use Socket;
 use constant OPCODE_DATA => 3;
 use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
-use constant DATA_LENGTH => ($ENV{MOJO_TFTPD_DATAGRAM_LENGTH} || 512) - 4;
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
 our %ERROR_CODES = (
@@ -32,6 +31,11 @@ our %ERROR_CODES = (
 );
 
 =head1 ATTRIBUTES
+
+=head2 blocksize
+
+The negotiated blocksize.
+Default is 512 Byte.
 
 =head2 error
 
@@ -75,6 +79,7 @@ in an array ref.
 
 =cut
 
+has blocksize => 512;
 has error => '';
 has file => '/dev/null';
 has filehandle => undef;
@@ -105,13 +110,13 @@ sub send_data {
     if(!$FH) {
         return $self->send_error(file_not_found => 'No filehandle');
     }
-    elsif(not seek $FH, ($n - 1) * DATA_LENGTH, 0) {
+    elsif(not seek $FH, ($n - 1) * $self->blocksize, 0) {
         return $self->send_error(file_not_found => "Seek: $!");
     }
-    if(not defined read $FH, $data, DATA_LENGTH) {
+    if(not defined read $FH, $data, $self->blocksize) {
         return $self->send_error(file_not_found => "Read: $!");
     }
-    if(length $data < DATA_LENGTH) {
+    if(length $data < $self->blocksize) {
         $self->{_last_sequence_number} = $n;
     }
 
@@ -170,7 +175,7 @@ sub receive_data {
     unless(print $FH $data) {
         return $self->send_error(illegal_operation => "Write: $!");
     };
-    unless(length $data == DATA_LENGTH) {
+    unless(length $data == $self->blocksize) {
         $self->{_last_sequence_number} = $n;
     }
 
