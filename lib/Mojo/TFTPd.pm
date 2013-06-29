@@ -6,7 +6,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 =head1 VERSION
 
-0.01
+0.01_01
 
 =head1 SYNOPSIS
 
@@ -66,7 +66,8 @@ use constant CHECK_INACTIVE_INTERVAL => $ENV{MOJO_TFTPD_CHECK_INACTIVE_INTERVAL}
 use constant MAX_BLOCK_SIZE => 65464; # From RFC 2348
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
-our $VERSION = eval '0.01';
+our $VERSION = "0.01_01";
+$VERSION = $VERSION;
 
 =head1 EVENTS
 
