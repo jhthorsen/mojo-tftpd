@@ -6,7 +6,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 =head1 VERSION
 
-0.01
+0.01_01
 
 =head1 SYNOPSIS
 
@@ -56,7 +56,6 @@ L<Mojo::TFTPd::Connection>.
 use Mojo::Base 'Mojo::EventEmitter';
 use Mojo::IOLoop;
 use Mojo::TFTPd::Connection;
-use Mojo::URL;
 use constant OPCODE_RRQ => 1;
 use constant OPCODE_WRQ => 2;
 use constant OPCODE_DATA => 3;
@@ -64,10 +63,11 @@ use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
 use constant OPCODE_OACK => 6;
 use constant CHECK_INACTIVE_INTERVAL => $ENV{MOJO_TFTPD_CHECK_INACTIVE_INTERVAL} || 3;
-use constant DATAGRAM_LENGTH => $ENV{MOJO_TFTPD_DATAGRAM_LENGTH} || 512;
+use constant MAX_BLOCK_SIZE => 65464; # From RFC 2348
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
-our $VERSION = eval '0.01';
+our $VERSION = "0.01_01";
+$VERSION = $VERSION;
 
 =head1 EVENTS
 
@@ -168,24 +168,19 @@ event wille be emitted if the server fail to start.
 sub start {
     my $self = shift;
     my $reactor = $self->ioloop->reactor;
-    my $url = $self->listen;
     my $socket;
 
     $self->{connections} and return $self;
     $self->{connections} = {};
 
-    if($url =~ /^tftp/) {
-        $url = Mojo::URL->new($url);
-    }
-    else {
-        $url = Mojo::URL->new("tftp://$url");
-    }
+    # split $self->listen into host and port
+    my ($host, $port) = $self->_parse_listen;
 
-    warn "[Mojo::TFTPd] Listen to $url\n" if DEBUG;
+    warn "[Mojo::TFTPd] Listen to $host:$port\n" if DEBUG;
 
     $socket = IO::Socket::INET->new(
-                  LocalAddr => $url->host eq '*' ? '0.0.0.0' : $url->host,
-                  LocalPort => $url->port,
+                  LocalAddr => $host,
+                  LocalPort => $port,
                   Proto => 'udp',
               );
 
@@ -216,7 +211,7 @@ sub start {
 sub _incoming {
     my $self = shift;
     my $socket = $self->{socket};
-    my $read = $socket->recv(my $datagram, DATAGRAM_LENGTH);
+    my $read = $socket->recv(my $datagram, MAX_BLOCK_SIZE + 4); # Add 4 Bytes of Opcode + Block#
     my($opcode, $connection);
 
     if(!defined $read) {
@@ -292,6 +287,27 @@ sub _new_request {
     else {
         $self->emit(finish => $connection, $connection->error);
     }
+}
+
+sub _parse_listen {
+    my $self = shift;
+
+    my ($scheme, $host, $port) = $self->listen =~ m!
+      (?: ([^:/]+) :// )?   # part before ://
+      ([^:]*)               # everyting until a :
+      (?: : (\d+) )?        # any digits after the :
+    !xms;
+
+    # if scheme is set but no port, use scheme
+    $port = getservbyname($scheme, '') if $scheme && !defined $port;
+
+    # use port 69 as fallback
+    $port //= 69;
+
+    # if host == '*', replace it with '0.0.0.0'
+    $host = '0.0.0.0' if $host eq '*';
+
+    return ($host, $port);
 }
 
 sub _delete_connection {

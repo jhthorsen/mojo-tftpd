@@ -1,4 +1,8 @@
 Revision history for Mojo-TFTPd
 
+0.01_01	 Sat Jun 29 22:42:09 CEST 2013
+	* Fixed Mojo::URL regression
+	* Fixed 508 byte block RFC-violation
+
 0.01     Sun Nov 11 02:40:10 2012
        * Started project
