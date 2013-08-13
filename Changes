@@ -1,4 +1,10 @@
 Revision history for Mojo-TFTPd
 
+0.02     Tue Aug 13 18:16:58 2013
+       * Fixed Mojo::URL regression
+       * Fixed 508 byte block RFC-violation
+         Author: https://github.com/hemmop
+         https://github.com/jhthorsen/mojo-tftpd/pull/1
+
 0.01     Sun Nov 11 02:40:10 2012
        * Started project
