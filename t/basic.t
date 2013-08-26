@@ -4,6 +4,8 @@ use warnings;
 use Test::More;
 use Mojo::TFTPd;
 
+plan skip_all => 'No idea if this works on windows' if $^O eq 'MSWin32';
+
 my $tftpd = Mojo::TFTPd->new(retries => 6);
 my(@error, @finish);
 our $DATA;

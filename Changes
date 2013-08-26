@@ -1,5 +1,10 @@
 Revision history for Mojo-TFTPd
 
+0.0201   Mon Aug 26 23:19:36 2013
+       * Skip test if on windows
+         http://www.cpantesters.org/cpan/report/0714a910-6c03-1014-b581-fa2409253afe
+         "Your vendor has not defined Socket macro MSG_DONTWAIT..."
+
 0.02     Tue Aug 13 18:16:58 2013
        * Fixed Mojo::URL regression
        * Fixed 508 byte block RFC-violation
