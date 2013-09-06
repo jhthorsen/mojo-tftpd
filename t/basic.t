@@ -29,7 +29,7 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
     local $! = 5;
     $DATA = undef;
     $tftpd->_incoming;
-    is $error[0][0], 'Read: Input/output error', 'Got read error';
+    like $error[0][0], qr{^Read: }, 'Got read error';
 
     $DATA = pack 'n', Mojo::TFTPd::OPCODE_ACK;
     $tftpd->_incoming;
