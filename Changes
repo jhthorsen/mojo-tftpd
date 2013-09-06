@@ -1,5 +1,8 @@
 Revision history for Mojo-TFTPd
 
+0.0203   Fri Sep  6 23:42:35 2013
+       * Fix Makefile.PL
+
 0.0202   Fri Sep  6 10:54:44 2013
        * Fix t/basic.t on SunOS/Solaris
 
