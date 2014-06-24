@@ -39,7 +39,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 =head1 DESCRIPTION
 
-This module implement a server for the
+This module implements a server for the
 L<Trivial File Transfer Protocol|http://en.wikipedia.org/wiki/Trivial_File_Transfer_Protocol>.
 
 From Wikipedia:
@@ -150,6 +150,7 @@ has retries => 1;
 =head2 inactive_timeout
 
 How long a L<connection|Mojo::TFTPd::Connection> can stay idle before
+being dropped.
 
 =cut
 
@@ -160,7 +161,7 @@ has inactive_timeout => 15;
 =head2 start
 
 Starts listening to the address and port set in L</Listen>. The L</error>
-event wille be emitted if the server fail to start.
+event will be emitted if the server fail to start.
 
 =cut
 
