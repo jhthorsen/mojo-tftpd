@@ -277,6 +277,13 @@ sub process_options {
             && $value <= 255 ) {
             $self->{opt}{timeout} = $ack{$option} = $value;
         }
+        elsif( $opt eq 'tsize' ) {
+            if( $self->type eq 'rrq' ) {
+                my $tsize = -s $self->filehandle;
+                $ack{$option} = $tsize if defined $tsize && length $tsize;
+            }
+            # tsize in wrq is not supported yet
+        }
         # ignore unknown options
     }
 
