@@ -197,8 +197,8 @@ sub start {
     $self->{socket} = $socket;
     $self->{checker}
         = $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL || 3, sub {
-            my $timeout = time - $self->inactive_timeout;
             for my $c (values %{ $self->{connections} }) {
+                my $timeout = time - ( $c->timeout || $self->inactive_timeout );
                 $timeout < $c->{timestamp} and next;
                 $c->error('Inactive timeout');
                 $self->_delete_connection($c);
@@ -270,6 +270,7 @@ sub _new_request {
     }
 
     $connection = Mojo::TFTPd::Connection->new(
+                        type => $type,
                         file => $file,
                         mode => $mode,
                         peerhost => $socket->peerhost,
@@ -281,7 +282,10 @@ sub _new_request {
 
     $self->emit($type => $connection);
 
-    if($type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
+    if( @rfc && $connection->process_options ) {
+        $self->{connections}{$connection->peername} = $connection;
+    }
+    elsif($type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
         $self->{connections}{$connection->peername} = $connection;
     }
     else {
