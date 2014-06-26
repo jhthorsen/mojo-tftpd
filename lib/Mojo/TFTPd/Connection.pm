@@ -15,6 +15,7 @@ use Socket;
 use constant OPCODE_DATA => 3;
 use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
+use constant OPCODE_OACK => 6;
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
 our %ERROR_CODES = (
@@ -81,6 +82,11 @@ The UDP handle to send data to.
 Contains extra parameters the client has provided. These parameters are stored
 in an array ref.
 
+=head2 opt
+
+Contains the options accepted by the server, that will be applied if the
+client acknowledges the server acceptance. These parameters are stored in a hash ref.
+
 =cut
 
 has type => '';
@@ -93,6 +99,7 @@ has peerhost => '';
 has peername => '';
 has retries => 2;
 has rfc => sub { [] };
+has opt => sub { [] };
 has socket => undef;
 has _sequence_number => 1;
 
@@ -151,10 +158,16 @@ sub receive_ack {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n\n" if DEBUG;
 
-    return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
-    return ++$self->{_sequence_number} if $n == $self->{_sequence_number};
-    $self->error('Invalid packet number');
-    return $self->{retries}--;
+    if ( $n == 0 ) { # client ACK for OACK, apply the options
+        $self->{$_} = $self->{opt}{$_} for keys %{ $self->{opt} };
+        return 1;
+    }
+    else {
+        return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
+        return ++$self->{_sequence_number} if $n == $self->{_sequence_number};
+        $self->error('Invalid packet number');
+        return $self->{retries}--;
+    }
 }
 
 =head2 receive_data
@@ -234,6 +247,43 @@ sub send_error {
     );
 
     return 0;
+}
+
+=head2 process_options
+
+This method is called when the client has sent some options,
+to process the options that the server understands and
+send OACK if any of the options were accepted by the server.
+
+=cut
+
+sub process_options {
+    my $self = shift;
+    my @rfc  = @{ $self->{rfc} };
+    my %ack;
+
+    # process options
+    while (@rfc) {
+        my ( $option, $value ) = splice @rfc, 0, 2;
+        my $opt = lc $option;
+        if (   $opt eq 'blksize'
+            && $value > 0
+            && $value <= Mojo::TFTPd::MAX_BLOCK_SIZE() ) {
+            $self->{opt}{blocksize} = $ack{$option} = $value;
+        }
+        # ignore unknown options
+    }
+
+    if (%ack) {
+        $self->{timestamp} = time;
+        warn "[Mojo::TFTPd] >>> $self->{peerhost} oack @{[%ack]}\n" if DEBUG;
+        my $sent = $self->socket->send(
+            pack( 'na*', OPCODE_OACK, join( "\0", %ack, '' ) ),
+            MSG_DONTWAIT,
+            $self->peername,
+        );
+        return 1 if $sent;
+    }
 }
 
 =head1 AUTHOR

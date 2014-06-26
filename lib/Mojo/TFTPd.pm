@@ -281,7 +281,10 @@ sub _new_request {
 
     $self->emit($type => $connection);
 
-    if($type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
+    if( @rfc && $connection->process_options ) {
+        $self->{connections}{$connection->peername} = $connection;
+    }
+    elsif($type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
         $self->{connections}{$connection->peername} = $connection;
     }
     else {
