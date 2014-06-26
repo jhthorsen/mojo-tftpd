@@ -100,6 +100,7 @@ has peername => '';
 has retries => 2;
 has rfc => sub { [] };
 has opt => sub { [] };
+has timeout => 0;
 has socket => undef;
 has _sequence_number => 1;
 
@@ -270,6 +271,11 @@ sub process_options {
             && $value > 0
             && $value <= Mojo::TFTPd::MAX_BLOCK_SIZE() ) {
             $self->{opt}{blocksize} = $ack{$option} = $value;
+        }
+        elsif( $opt eq 'timeout'
+            && $value >= 1
+            && $value <= 255 ) {
+            $self->{opt}{timeout} = $ack{$option} = $value;
         }
         # ignore unknown options
     }

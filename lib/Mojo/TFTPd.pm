@@ -196,8 +196,8 @@ sub start {
     $self->{socket} = $socket;
     $self->{checker}
         = $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL || 3, sub {
-            my $timeout = time - $self->inactive_timeout;
             for my $c (values %{ $self->{connections} }) {
+                my $timeout = time - ( $c->timeout || $self->inactive_timeout );
                 $timeout < $c->{timestamp} and next;
                 $c->error('Inactive timeout');
                 $self->_delete_connection($c);
