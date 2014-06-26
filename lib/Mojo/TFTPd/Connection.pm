@@ -32,6 +32,10 @@ our %ERROR_CODES = (
 
 =head1 ATTRIBUTES
 
+=head2 type
+
+The type of request (either C<rrq> or C<wrq>).
+
 =head2 blocksize
 
 The negotiated blocksize.
@@ -79,6 +83,7 @@ in an array ref.
 
 =cut
 
+has type => '';
 has blocksize => 512;
 has error => '';
 has file => '/dev/null';
