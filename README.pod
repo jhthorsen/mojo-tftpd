@@ -4,7 +4,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 =head1 VERSION
 
-0.01
+0.0203
 
 =head1 SYNOPSIS
 
@@ -19,6 +19,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
         my($tftpd, $c) = @_;
         open my $FH, '<', $c->file;
         $c->filehandle($FH);
+        $c->filesize(-s $c->file);
     });
 
     $tftpd->on(wrq => sub {
@@ -27,7 +28,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
         $c->filehandle($FH);
     });
 
-    $self->on(finish => sub {
+    $tftpd->on(finish => sub {
         my($tftpd, $c, $error) = @_;
         warn "Connection: $error\n" if $error;
     });
@@ -37,7 +38,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 =head1 DESCRIPTION
 
-This module implement a server for the
+This module implements a server for the
 L<Trivial File Transfer Protocol|http://en.wikipedia.org/wiki/Trivial_File_Transfer_Protocol>.
 
 From Wikipedia:
@@ -48,9 +49,6 @@ From Wikipedia:
 
 The connection ($c) which is referred to in this document is an instance of
 L<Mojo::TFTPd::Connection>.
-
-
-=cut
 
 =head1 EVENTS
 
@@ -98,9 +96,6 @@ will be dropped.
 
 Holds an instance of L<Mojo::IOLoop>.
 
-
-=cut
-
 =head2 listen
 
     $str = $self->server;
@@ -109,45 +104,28 @@ Holds an instance of L<Mojo::IOLoop>.
 
 The bind address for this server.
 
-
-=cut
-
 =head2 max_connections
 
 How many concurrent connections this server can handle. Default to 1000.
-
-
-=cut
 
 =head2 retries
 
 How many times the server should try to send ACK or DATA to the client before
 dropping the L<connection|Mojo::TFTPd::Connection>.
 
-
-=cut
-
 =head2 inactive_timeout
 
 How long a L<connection|Mojo::TFTPd::Connection> can stay idle before
-
-
-=cut
+being dropped.
 
 =head1 METHODS
 
 =head2 start
 
 Starts listening to the address and port set in L</Listen>. The L</error>
-event wille be emitted if the server fail to start.
-
-
-=cut
+event will be emitted if the server fail to start.
 
 =head1 AUTHOR
 
 Jan Henning Thorsen - C<jhthorsen@cpan.org>
-
-
-=cut
 
