@@ -21,6 +21,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
         my($tftpd, $c) = @_;
         open my $FH, '<', $c->file;
         $c->filehandle($FH);
+        $c->filesize(-s $c->file);
     });
 
     $tftpd->on(wrq => sub {
@@ -29,7 +30,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
         $c->filehandle($FH);
     });
 
-    $self->on(finish => sub {
+    $tftpd->on(finish => sub {
         my($tftpd, $c, $error) = @_;
         warn "Connection: $error\n" if $error;
     });
