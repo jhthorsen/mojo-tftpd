@@ -15,6 +15,7 @@ use Socket;
 use constant OPCODE_DATA => 3;
 use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
+use constant OPCODE_OACK => 6;
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
 our %ERROR_CODES = (
@@ -83,6 +84,8 @@ has blocksize => 512;
 has error => '';
 has file => '/dev/null';
 has filehandle => undef;
+has filesize => undef;
+has timeout => undef;
 has mode => '';
 has peerhost => '';
 has peername => '';
@@ -146,6 +149,7 @@ sub receive_ack {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n\n" if DEBUG;
 
+    return 1 if $n == 0;
     return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
     return ++$self->{_sequence_number} if $n == $self->{_sequence_number};
     $self->error('Invalid packet number');
@@ -230,6 +234,41 @@ sub send_error {
 
     return 0;
 }
+
+
+=head2 send_oack
+
+Used to send OACK to client
+Supported options are blksize tsize and timeout
+
+=cut
+
+
+sub send_oack {
+    my $self = shift;
+    my $sent;
+
+    $self->{timestamp} = time;
+
+    my %rfc = @{$self->rfc};
+    my @options;
+    push @options, 'blksize', $self->blocksize if $rfc{blksize};
+    push @options, 'timeout', $self->timeout if $rfc{timeout};
+    push @options, 'tsize', $self->filesize if exists $rfc{tsize};
+
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} oack @options\n" if DEBUG;
+
+    $sent = $self->socket->send(
+                pack('na*', OPCODE_OACK, join "\0", @options),
+                MSG_DONTWAIT,
+                $self->peername,
+            );
+
+    return 1 if $sent;
+    $self->error("Send: $!");
+    return $self->{retries}--;
+}
+
 
 =head1 AUTHOR
 

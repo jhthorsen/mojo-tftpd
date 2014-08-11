@@ -63,6 +63,7 @@ use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
 use constant OPCODE_OACK => 6;
 use constant CHECK_INACTIVE_INTERVAL => $ENV{MOJO_TFTPD_CHECK_INACTIVE_INTERVAL} || 3;
+use constant MIN_BLOCK_SIZE => 8;
 use constant MAX_BLOCK_SIZE => 65464; # From RFC 2348
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
@@ -197,9 +198,9 @@ sub start {
     $self->{socket} = $socket;
     $self->{checker}
         = $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL || 3, sub {
-            my $timeout = time - $self->inactive_timeout;
+            my $time = time;
             for my $c (values %{ $self->{connections} }) {
-                $timeout < $c->{timestamp} and next;
+                next if $time - $c->timeout < $c->{timestamp};
                 $c->error('Inactive timeout');
                 $self->_delete_connection($c);
             }
@@ -275,13 +276,28 @@ sub _new_request {
                         peerhost => $socket->peerhost,
                         peername => $socket->peername,
                         retries => $self->retries,
+                        timeout => $self->inactive_timeout,
                         rfc => \@rfc,
                         socket => $socket,
                     );
 
+    my %rfc = @rfc;
+    if ($rfc{blksize}) {
+        $rfc{blksize} = MIN_BLOCK_SIZE if $rfc{blksize} < MIN_BLOCK_SIZE;
+        $rfc{blksize} = MAX_BLOCK_SIZE if $rfc{blksize} > MAX_BLOCK_SIZE;
+        $connection->blocksize($rfc{blksize});
+    }
+    if ($rfc{timeout} and $rfc{timeout} >= 0 and $rfc{timeout} <= 255) {
+        $connection->timeout($rfc{timeout});
+    }
+    if ($type eq 'wrq' and $rfc{tsize}) {
+        $connection->filesize($rfc{tsize});
+    }
+
     $self->emit($type => $connection);
 
-    if($type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
+    if ((scalar @rfc and $connection->send_oack) 
+        or $type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
         $self->{connections}{$connection->peername} = $connection;
     }
     else {
@@ -329,8 +345,5 @@ sub DEMOLISH {
 Jan Henning Thorsen - C<jhthorsen@cpan.org>
 
 =cut
-
-1;
-
 
 1;
