@@ -49,13 +49,19 @@ The filename the client requested to read or write.
 
 =head2 filehandle
 
-This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<rrw|Mojo::TFTPd/wrq>
+This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<wrq|Mojo::TFTPd/wrq>
 event or the connection will be dropped.
 
 =head2 filesize
 
 This must be set inside the L<rrq|Mojo::TFTPd/rrq>
 to report tsize option if client requested
+
+If set inside L<wrq|Mojo::TFTPd/wrq> limits maximum upload
+Set automatically on WRQ with tsize
+
+Can be used inside L<finish|Mojo::TFTPd/finish> for uploads
+to check if reported tsize and received data length match
 
 =head2 timeout
 
@@ -84,7 +90,7 @@ The UDP handle to send data to.
 
 =head2 rfc
 
-Contains extra parameters the client has provided. These parameters are stored
+Contains RFC 2347 options the client has provided. These options are stored
 in an array ref.
 
 =cut
