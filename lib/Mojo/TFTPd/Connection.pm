@@ -247,8 +247,11 @@ sub send_error {
 
 =head2 send_oack
 
-Used to send OACK to client
-Supported options are blksize tsize and timeout
+Used to send RFC 2347 OACK to client
+Supported options are
+RFC 2348 blksize - report $self->blocksize
+RFC 2349 timeout - report $self->timeout
+RFC 2349 tsize - report $self->filesize if set inside the L<rrq|Mojo::TFTPd/rrq>
 
 =cut
 
@@ -263,7 +266,7 @@ sub send_oack {
     my @options;
     push @options, 'blksize', $self->blocksize if $rfc{blksize};
     push @options, 'timeout', $self->timeout if $rfc{timeout};
-    push @options, 'tsize', $self->filesize if exists $rfc{tsize};
+    push @options, 'tsize', $self->filesize if exists $rfc{tsize} and $self->filesize;
 
     warn "[Mojo::TFTPd] >>> $self->{peerhost} oack @options\n" if DEBUG;
 
