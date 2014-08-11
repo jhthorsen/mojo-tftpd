@@ -192,6 +192,9 @@ sub receive_data {
         $self->{_last_sequence_number} = $n;
     }
 
+    return $self->send_error(disk_full => 'tsize exceeded')
+        if $self->filesize and $self->filesize < $self->blocksize * ($n-1) + length $data;
+
     $self->{_sequence_number}++;
     return 1;
 }
