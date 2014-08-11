@@ -49,8 +49,17 @@ The filename the client requested to read or write.
 
 =head2 filehandle
 
-This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<rrw|Mojo::TFTPd/rrw>
+This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<rrw|Mojo::TFTPd/wrq>
 event or the connection will be dropped.
+
+=head2 filesize
+
+This must be set inside the L<rrq|Mojo::TFTPd/rrq>
+to report tsize option if client requested
+
+=head2 timeout
+
+How long a connection can stay idle before being dropped.
 
 =head2 mode
 
