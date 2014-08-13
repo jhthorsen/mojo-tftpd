@@ -1,10 +1,5 @@
-^mypp.yml
-cover_db
-.git
-\.old
-\.swp
-~$
-^blib/
-^Makefile$
-^MANIFEST.SKIP
-^Mojo-TFTPd
+#!include_default
+\.swp$
+^local/
+^MANIFEST\.SKIP
+^README\.pod
