@@ -2,7 +2,7 @@ NAME
     Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 VERSION
-    0.0203
+    0.03
 
 SYNOPSIS
         use Mojo::TFTPd;
@@ -16,6 +16,7 @@ SYNOPSIS
             my($tftpd, $c) = @_;
             open my $FH, '<', $c->file;
             $c->filehandle($FH);
+            $c->filesize(-s $c->file);
         });
 
         $tftpd->on(wrq => sub {
@@ -24,7 +25,7 @@ SYNOPSIS
             $c->filehandle($FH);
         });
 
-        $self->on(finish => sub {
+        $tftpd->on(finish => sub {
             my($tftpd, $c, $error) = @_;
             warn "Connection: $error\n" if $error;
         });
@@ -33,7 +34,7 @@ SYNOPSIS
         $tftpd->ioloop->start unless $tftpd->ioloop->is_running;
 
 DESCRIPTION
-    This module implement a server for the Trivial File Transfer Protocol
+    This module implements a server for the Trivial File Transfer Protocol
     <http://en.wikipedia.org/wiki/Trivial_File_Transfer_Protocol>.
 
     From Wikipedia:
@@ -99,13 +100,15 @@ ATTRIBUTES
     before dropping the connection.
 
   inactive_timeout
-    How long a connection can stay idle before
+    How long a connection can stay idle before being dropped.
 
 METHODS
   start
     Starts listening to the address and port set in "Listen". The "error"
-    event wille be emitted if the server fail to start.
+    event will be emitted if the server fail to start.
 
 AUTHOR
+    Svetoslav Naydenov
+
     Jan Henning Thorsen - "jhthorsen@cpan.org"
 

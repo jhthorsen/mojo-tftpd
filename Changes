@@ -1,5 +1,10 @@
 Revision history for Mojo-TFTPd
 
+0.03     Wed Aug 13 16:19:51 2014
+       * Add RFC 2347 TFTP Option Extension
+       * Add RFC 2348 TFTP Blocksize Option
+       * Add RFC 2349 TFTP Timeout Interval and Transfer Size Options
+
 0.0203   Fri Sep  6 23:42:35 2013
        * Fix Makefile.PL
 
