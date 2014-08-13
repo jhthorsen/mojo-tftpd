@@ -60,9 +60,11 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
 {
     $DATA = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "doesntexist", "ascii";
     $tftpd->_incoming;
-    ok !$tftpd->{connections}{whatever}, 'rrq connection was removed on invalid file';
+    ok $tftpd->{connections}{whatever}, 'rrq connection does not exists on invalid file';
     is $DATA, pack('nnZ*', Mojo::TFTPd::OPCODE_ERROR, 1, "File not found"), 'doesntexist result in error';
-    is $finish[0][1], 'No filehandle', $finish[0][1];
+    $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
+    $tftpd->_incoming;
+    is $finish[0][1], '', 'error on ack of error';
 }
 
 {
