@@ -15,6 +15,7 @@ use Socket;
 use constant OPCODE_DATA => 3;
 use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
+use constant OPCODE_OACK => 6;
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
 our %ERROR_CODES = (
@@ -32,6 +33,10 @@ our %ERROR_CODES = (
 
 =head1 ATTRIBUTES
 
+=head2 type
+
+Type of connection rrq or wrq
+
 =head2 blocksize
 
 The negotiated blocksize.
@@ -48,8 +53,23 @@ The filename the client requested to read or write.
 
 =head2 filehandle
 
-This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<rrw|Mojo::TFTPd/rrw>
+This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<wrq|Mojo::TFTPd/wrq>
 event or the connection will be dropped.
+
+=head2 filesize
+
+This must be set inside the L<rrq|Mojo::TFTPd/rrq>
+to report tsize option if client requested
+
+If set inside L<wrq|Mojo::TFTPd/wrq> limits maximum upload
+Set automatically on WRQ with tsize
+
+Can be used inside L<finish|Mojo::TFTPd/finish> for uploads
+to check if reported tsize and received data length match
+
+=head2 timeout
+
+How long a connection can stay idle before being dropped.
 
 =head2 mode
 
@@ -74,22 +94,26 @@ The UDP handle to send data to.
 
 =head2 rfc
 
-Contains extra parameters the client has provided. These parameters are stored
-in an array ref.
+Contains RFC 2347 options the client has provided. These options are stored
+in an hash ref.
 
 =cut
 
+has type => undef;
 has blocksize => 512;
 has error => '';
 has file => '/dev/null';
 has filehandle => undef;
+has filesize => undef;
+has timeout => undef;
 has mode => '';
 has peerhost => '';
 has peername => '';
 has retries => 2;
-has rfc => sub { [] };
+has rfc => sub { {} };
 has socket => undef;
 has _sequence_number => 1;
+has lastop => undef;
 
 =head1 METHODS
 
@@ -106,11 +130,9 @@ sub send_data {
     my($data, $sent);
 
     $self->{timestamp} = time;
+    $self->{lastop} = OPCODE_DATA;
 
-    if(!$FH) {
-        return $self->send_error(file_not_found => 'No filehandle');
-    }
-    elsif(not seek $FH, ($n - 1) * $self->blocksize, 0) {
+    if(not seek $FH, ($n - 1) * $self->blocksize, 0) {
         return $self->send_error(file_not_found => "Seek: $!");
     }
     if(not defined read $FH, $data, $self->blocksize) {
@@ -146,6 +168,8 @@ sub receive_ack {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n\n" if DEBUG;
 
+    return 1 if $n == 0 and $self->lastop eq OPCODE_OACK;
+    return 0 if $self->lastop eq OPCODE_ERROR;
     return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
     return ++$self->{_sequence_number} if $n == $self->{_sequence_number};
     $self->error('Invalid packet number');
@@ -165,9 +189,6 @@ sub receive_data {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
 
-    unless($FH) {
-        return $self->send_error(illegal_operation => 'No filehandle');
-    }
     unless($n == $self->_sequence_number) {
         $self->error('Invalid packet number');
         return $self->{retries}--;
@@ -178,6 +199,9 @@ sub receive_data {
     unless(length $data == $self->blocksize) {
         $self->{_last_sequence_number} = $n;
     }
+
+    return $self->send_error(disk_full => 'tsize exceeded')
+        if $self->filesize and $self->filesize < $self->blocksize * ($n-1) + length $data;
 
     $self->{_sequence_number}++;
     return 1;
@@ -195,6 +219,7 @@ sub send_ack {
     my $sent;
 
     $self->{timestamp} = time;
+    $self->{lastop} = OPCODE_ACK;
     warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $n\n" if DEBUG;
 
     $sent = $self->socket->send(
@@ -219,6 +244,7 @@ sub send_error {
     my($self, $name) = @_;
     my $err = $ERROR_CODES{$name} || $ERROR_CODES{not_defined};
 
+    $self->{lastop} = OPCODE_ERROR;
     warn "[Mojo::TFTPd] >>> $self->{peerhost} error @$err\n" if DEBUG;
 
     $self->error($_[2]);
@@ -230,6 +256,44 @@ sub send_error {
 
     return 0;
 }
+
+
+=head2 send_oack
+
+Used to send RFC 2347 OACK to client
+Supported options are
+RFC 2348 blksize - report $self->blocksize
+RFC 2349 timeout - report $self->timeout
+RFC 2349 tsize - report $self->filesize if set inside the L<rrq|Mojo::TFTPd/rrq>
+
+=cut
+
+
+sub send_oack {
+    my $self = shift;
+    my $sent;
+
+    $self->{timestamp} = time;
+    $self->{lastop} = OPCODE_OACK;
+
+    my @options;
+    push @options, 'blksize', $self->blocksize if $self->rfc->{blksize};
+    push @options, 'timeout', $self->timeout if $self->rfc->{timeout};
+    push @options, 'tsize', $self->filesize if exists $self->rfc->{tsize} and $self->filesize;
+
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} oack @options\n" if DEBUG;
+
+    $sent = $self->socket->send(
+                pack('na*', OPCODE_OACK, join "\0", @options),
+                MSG_DONTWAIT,
+                $self->peername,
+            );
+
+    return 1 if $sent;
+    $self->error("Send: $!");
+    return $self->{retries}--;
+}
+
 
 =head1 AUTHOR
 

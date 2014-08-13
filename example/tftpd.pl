@@ -19,6 +19,7 @@ $tftpd->on(rrq => sub {
     open my $FH, '<', $c->file or return;
     warn "Mojo::TFTPd: rrq ./", $c->file, "\n";
     $c->filehandle($FH);
+    $c->filesize(-s $c->file);
 });
 
 $tftpd->on(wrq => sub {

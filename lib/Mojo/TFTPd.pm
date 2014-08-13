@@ -21,6 +21,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
         my($tftpd, $c) = @_;
         open my $FH, '<', $c->file;
         $c->filehandle($FH);
+        $c->filesize(-s $c->file);
     });
 
     $tftpd->on(wrq => sub {
@@ -29,7 +30,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
         $c->filehandle($FH);
     });
 
-    $self->on(finish => sub {
+    $tftpd->on(finish => sub {
         my($tftpd, $c, $error) = @_;
         warn "Connection: $error\n" if $error;
     });
@@ -63,6 +64,7 @@ use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
 use constant OPCODE_OACK => 6;
 use constant CHECK_INACTIVE_INTERVAL => $ENV{MOJO_TFTPD_CHECK_INACTIVE_INTERVAL} || 3;
+use constant MIN_BLOCK_SIZE => 8;
 use constant MAX_BLOCK_SIZE => 65464; # From RFC 2348
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
@@ -197,9 +199,9 @@ sub start {
     $self->{socket} = $socket;
     $self->{checker}
         = $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL || 3, sub {
-            my $timeout = time - $self->inactive_timeout;
+            my $time = time;
             for my $c (values %{ $self->{connections} }) {
-                $timeout < $c->{timestamp} and next;
+                next if $time - $c->timeout < $c->{timestamp};
                 $c->error('Inactive timeout');
                 $self->_delete_connection($c);
             }
@@ -269,19 +271,39 @@ sub _new_request {
         return;
     }
 
+    my %rfc = @rfc;
     $connection = Mojo::TFTPd::Connection->new(
+                        type => $type,
                         file => $file,
                         mode => $mode,
                         peerhost => $socket->peerhost,
                         peername => $socket->peername,
                         retries => $self->retries,
-                        rfc => \@rfc,
+                        timeout => $self->inactive_timeout,
+                        rfc => \%rfc,
                         socket => $socket,
                     );
 
+    if ($rfc{blksize}) {
+        $rfc{blksize} = MIN_BLOCK_SIZE if $rfc{blksize} < MIN_BLOCK_SIZE;
+        $rfc{blksize} = MAX_BLOCK_SIZE if $rfc{blksize} > MAX_BLOCK_SIZE;
+        $connection->blocksize($rfc{blksize});
+    }
+    if ($rfc{timeout} and $rfc{timeout} >= 0 and $rfc{timeout} <= 255) {
+        $connection->timeout($rfc{timeout});
+    }
+    if ($type eq 'wrq' and $rfc{tsize}) {
+        $connection->filesize($rfc{tsize});
+    }
+
     $self->emit($type => $connection);
 
-    if($type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
+    if (!$connection->filehandle) {
+        $connection->send_error(file_not_found => $connection->error // 'No filehandle');
+        $self->{connections}{$connection->peername} = $connection;
+    }
+    elsif ((%rfc and $connection->send_oack) 
+        or $type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
         $self->{connections}{$connection->peername} = $connection;
     }
     else {
@@ -329,8 +351,5 @@ sub DEMOLISH {
 Jan Henning Thorsen - C<jhthorsen@cpan.org>
 
 =cut
-
-1;
-
 
 1;
