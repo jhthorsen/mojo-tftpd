@@ -271,6 +271,7 @@ sub _new_request {
         return;
     }
 
+    my %rfc = @rfc;
     $connection = Mojo::TFTPd::Connection->new(
                         type => $type,
                         file => $file,
@@ -279,11 +280,10 @@ sub _new_request {
                         peername => $socket->peername,
                         retries => $self->retries,
                         timeout => $self->inactive_timeout,
-                        rfc => \@rfc,
+                        rfc => \%rfc,
                         socket => $socket,
                     );
 
-    my %rfc = @rfc;
     if ($rfc{blksize}) {
         $rfc{blksize} = MIN_BLOCK_SIZE if $rfc{blksize} < MIN_BLOCK_SIZE;
         $rfc{blksize} = MAX_BLOCK_SIZE if $rfc{blksize} > MAX_BLOCK_SIZE;

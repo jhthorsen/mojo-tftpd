@@ -95,7 +95,7 @@ The UDP handle to send data to.
 =head2 rfc
 
 Contains RFC 2347 options the client has provided. These options are stored
-in an array ref.
+in an hash ref.
 
 =cut
 
@@ -110,7 +110,7 @@ has mode => '';
 has peerhost => '';
 has peername => '';
 has retries => 2;
-has rfc => sub { [] };
+has rfc => sub { {} };
 has socket => undef;
 has _sequence_number => 1;
 
@@ -276,11 +276,10 @@ sub send_oack {
 
     $self->{timestamp} = time;
 
-    my %rfc = @{$self->rfc};
     my @options;
-    push @options, 'blksize', $self->blocksize if $rfc{blksize};
-    push @options, 'timeout', $self->timeout if $rfc{timeout};
-    push @options, 'tsize', $self->filesize if exists $rfc{tsize} and $self->filesize;
+    push @options, 'blksize', $self->blocksize if $self->rfc->{blksize};
+    push @options, 'timeout', $self->timeout if $self->rfc->{timeout};
+    push @options, 'tsize', $self->filesize if exists $self->rfc->{tsize} and $self->filesize;
 
     warn "[Mojo::TFTPd] >>> $self->{peerhost} oack @options\n" if DEBUG;
 
