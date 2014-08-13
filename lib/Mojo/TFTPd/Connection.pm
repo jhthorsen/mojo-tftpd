@@ -113,6 +113,7 @@ has retries => 2;
 has rfc => sub { {} };
 has socket => undef;
 has _sequence_number => 1;
+has lastop => undef;
 
 =head1 METHODS
 
@@ -129,11 +130,9 @@ sub send_data {
     my($data, $sent);
 
     $self->{timestamp} = time;
+    $self->{lastop} = OPCODE_DATA;
 
-    if(!$FH) {
-        return $self->send_error(file_not_found => 'No filehandle');
-    }
-    elsif(not seek $FH, ($n - 1) * $self->blocksize, 0) {
+    if(not seek $FH, ($n - 1) * $self->blocksize, 0) {
         return $self->send_error(file_not_found => "Seek: $!");
     }
     if(not defined read $FH, $data, $self->blocksize) {
@@ -169,7 +168,8 @@ sub receive_ack {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n\n" if DEBUG;
 
-    return 1 if $n == 0;
+    return 1 if $n == 0 and $self->lastop eq OPCODE_OACK;
+    return 0 if $self->lastop eq OPCODE_ERROR;
     return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
     return ++$self->{_sequence_number} if $n == $self->{_sequence_number};
     $self->error('Invalid packet number');
@@ -189,9 +189,6 @@ sub receive_data {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
 
-    unless($FH) {
-        return $self->send_error(illegal_operation => 'No filehandle');
-    }
     unless($n == $self->_sequence_number) {
         $self->error('Invalid packet number');
         return $self->{retries}--;
@@ -222,6 +219,7 @@ sub send_ack {
     my $sent;
 
     $self->{timestamp} = time;
+    $self->{lastop} = OPCODE_ACK;
     warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $n\n" if DEBUG;
 
     $sent = $self->socket->send(
@@ -246,6 +244,7 @@ sub send_error {
     my($self, $name) = @_;
     my $err = $ERROR_CODES{$name} || $ERROR_CODES{not_defined};
 
+    $self->{lastop} = OPCODE_ERROR;
     warn "[Mojo::TFTPd] >>> $self->{peerhost} error @$err\n" if DEBUG;
 
     $self->error($_[2]);
@@ -275,6 +274,7 @@ sub send_oack {
     my $sent;
 
     $self->{timestamp} = time;
+    $self->{lastop} = OPCODE_OACK;
 
     my @options;
     push @options, 'blksize', $self->blocksize if $self->rfc->{blksize};

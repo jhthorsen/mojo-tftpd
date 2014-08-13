@@ -298,7 +298,11 @@ sub _new_request {
 
     $self->emit($type => $connection);
 
-    if ((scalar @rfc and $connection->send_oack) 
+    if (!$connection->filehandle) {
+        $connection->send_error(file_not_found => $connection->error // 'No filehandle');
+        $self->{connections}{$connection->peername} = $connection;
+    }
+    elsif ((%rfc and $connection->send_oack) 
         or $type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
         $self->{connections}{$connection->peername} = $connection;
     }
