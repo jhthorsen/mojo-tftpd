@@ -71,6 +71,10 @@ to check if reported tsize and received data length match
 
 How long a connection can stay idle before being dropped.
 
+=head2 lastop
+
+Last operation.
+
 =head2 mode
 
 Either "ascii", "octet" or empty string if unknown.
@@ -106,6 +110,7 @@ has file => '/dev/null';
 has filehandle => undef;
 has filesize => undef;
 has timeout => undef;
+has lastop => undef;
 has mode => '';
 has peerhost => '';
 has peername => '';
@@ -113,7 +118,6 @@ has retries => 2;
 has rfc => sub { {} };
 has socket => undef;
 has _sequence_number => 1;
-has lastop => undef;
 
 =head1 METHODS
 
