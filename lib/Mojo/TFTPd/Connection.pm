@@ -33,6 +33,10 @@ our %ERROR_CODES = (
 
 =head1 ATTRIBUTES
 
+=head2 type
+
+Type of connection rrq or wrq
+
 =head2 blocksize
 
 The negotiated blocksize.
@@ -95,6 +99,7 @@ in an array ref.
 
 =cut
 
+has type => undef;
 has blocksize => 512;
 has error => '';
 has file => '/dev/null';

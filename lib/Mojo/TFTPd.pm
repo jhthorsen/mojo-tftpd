@@ -272,6 +272,7 @@ sub _new_request {
     }
 
     $connection = Mojo::TFTPd::Connection->new(
+                        type => $type,
                         file => $file,
                         mode => $mode,
                         peerhost => $socket->peerhost,
