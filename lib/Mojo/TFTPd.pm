@@ -63,7 +63,6 @@ use constant OPCODE_DATA => 3;
 use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
 use constant OPCODE_OACK => 6;
-use constant CHECK_INACTIVE_INTERVAL => $ENV{MOJO_TFTPD_CHECK_INACTIVE_INTERVAL} || 3;
 use constant MIN_BLOCK_SIZE => 8;
 use constant MAX_BLOCK_SIZE => 65464; # From RFC 2348
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
@@ -142,21 +141,21 @@ has max_connections => 1000;
 
 =head2 retries
 
-How many times the server should try to send ACK or DATA to the client before
+How many times the server shoult try to retransmit the last packet on timeout before
 dropping the L<connection|Mojo::TFTPd::Connection>.
 
 =cut
 
-has retries => 1;
+has retries => 3;
 
-=head2 inactive_timeout
+=head2 retransmit_timeout
 
-How long a L<connection|Mojo::TFTPd::Connection> can stay idle before
-being dropped.
+How long a L<connection|Mojo::TFTPd::Connection> can stay idle before last packet 
+being retransmitted.
 
 =cut
 
-has inactive_timeout => 15;
+has retransmit_timeout => 2;
 
 =head1 METHODS
 
@@ -197,15 +196,6 @@ sub start {
     $reactor->io($socket, sub { $self->_incoming });
     $reactor->watch($socket, 1, 0); # watch read events
     $self->{socket} = $socket;
-    $self->{checker}
-        = $self->ioloop->recurring(CHECK_INACTIVE_INTERVAL || 3, sub {
-            my $time = time;
-            for my $c (values %{ $self->{connections} }) {
-                next if $time - $c->timeout < $c->{timestamp};
-                $c->error('Inactive timeout');
-                $self->_delete_connection($c);
-            }
-        });
 
     return $self;
 }
@@ -236,15 +226,22 @@ sub _incoming {
     if(!$connection) {
         return $self->emit(error => "@{[$socket->peerhost]} has no connection");
     }
-    elsif($opcode == OPCODE_ACK) {
-        return if $connection->receive_ack($datagram) and $connection->send_data;
+
+    # restart retransmit timer
+    $self->ioloop->remove($connection->{timer});
+    $connection->{timer} = $self->ioloop->recurring($connection->timeout => sub {
+        $connection->retransmit or $self->_delete_connection($connection);
+    });
+
+
+    if($opcode == OPCODE_ACK) {
+        return if $connection->receive_ack($datagram);
     }
     elsif($opcode == OPCODE_DATA) {
-        return if $connection->receive_data($datagram) and $connection->send_ack;
+        return if $connection->receive_data($datagram);
     }
     elsif($opcode == OPCODE_ERROR) {
-        my($code, $msg) = unpack 'nZ*', $datagram;
-        $connection->error("($code) $msg");
+        $connection->receive_error($datagram);
     }
     else {
         $connection->error("Unknown opcode");
@@ -279,7 +276,7 @@ sub _new_request {
                         peerhost => $socket->peerhost,
                         peername => $socket->peername,
                         retries => $self->retries,
-                        timeout => $self->inactive_timeout,
+                        timeout => $self->retransmit_timeout,
                         rfc => \%rfc,
                         socket => $socket,
                     );
@@ -297,18 +294,28 @@ sub _new_request {
     }
 
     $self->emit($type => $connection);
+    $self->{connections}{$connection->peername} = $connection;
+
+    # start retransmit timer
+    $connection->{timer} = $self->ioloop->recurring($connection->timeout => sub {
+        $connection->retransmit or $self->_delete_connection($connection);
+    });
 
     if (!$connection->filehandle) {
-        $connection->send_error(file_not_found => $connection->error // 'No filehandle');
-        $self->{connections}{$connection->peername} = $connection;
+        return if $connection->send_error(file_not_found => $connection->error // 'No filehandle');
     }
-    elsif ((%rfc and $connection->send_oack) 
-        or $type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
-        $self->{connections}{$connection->peername} = $connection;
+    elsif (%rfc) {
+        return if $connection->send_oack;
     }
-    else {
-        $self->emit(finish => $connection, $connection->error);
+    elsif ($type eq 'rrq') {
+        return if  $connection->send_data;
     }
+    elsif ($type eq 'wrq') {
+        return if $connection->send_ack;
+    }
+
+    $self->emit(finish => $connection, $connection->error);
+    $self->_delete_connection($connection);
 }
 
 sub _parse_listen {
@@ -334,6 +341,7 @@ sub _parse_listen {
 
 sub _delete_connection {
     my($self, $connection) = @_;
+    $self->ioloop->remove($connection->{timer});
     delete $self->{connections}{$connection->peername};
     $self->emit(finish => $connection, $connection->error);
 }
@@ -342,7 +350,6 @@ sub DEMOLISH {
     my $self = shift;
     my $reactor = eval { $self->ioloop->reactor } or return; # may be undef during global destruction
 
-    $reactor->remove($self->{checker}) if $self->{checker};
     $reactor->remove($self->{socket}) if $self->{socket};
 }
 
