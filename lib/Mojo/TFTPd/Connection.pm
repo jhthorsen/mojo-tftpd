@@ -69,7 +69,7 @@ to check if reported tsize and received data length match
 
 =head2 timeout
 
-How long a connection can stay idle before being dropped.
+Retransmit timeout
 
 =head2 lastop
 
@@ -77,7 +77,7 @@ Last operation.
 
 =head2 mode
 
-Either "ascii", "octet" or empty string if unknown.
+Either "netascii", "octet" or empty string if unknown.
 
 =head2 peerhost
 
@@ -114,9 +114,10 @@ has lastop => undef;
 has mode => '';
 has peerhost => '';
 has peername => '';
-has retries => 2;
+has retries => 3;
 has rfc => sub { {} };
 has socket => undef;
+has _attempt => 0;
 has _sequence_number => 1;
 
 =head1 METHODS
@@ -133,7 +134,6 @@ sub send_data {
     my $n = $self->_sequence_number;
     my($data, $sent);
 
-    $self->{timestamp} = time;
     $self->{lastop} = OPCODE_DATA;
 
     if(not seek $FH, ($n - 1) * $self->blocksize, 0) {
@@ -157,7 +157,7 @@ sub send_data {
     return 0 unless length $data;
     return 1 if $sent;
     $self->error("Send: $!");
-    return $self->{retries}--;
+    return 0;
 }
 
 =head2 receive_ack
@@ -172,12 +172,26 @@ sub receive_ack {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n\n" if DEBUG;
 
-    return 1 if $n == 0 and $self->lastop eq OPCODE_OACK;
     return 0 if $self->lastop eq OPCODE_ERROR;
     return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
-    return ++$self->{_sequence_number} if $n == $self->{_sequence_number};
+
+    $self->{_attempt} = 0;
+
+    if ($n == 0 and $self->lastop eq OPCODE_OACK) {
+        return $self->send_data;
+    }
+    elsif ($n == $self->{_sequence_number}) {
+        $self->{_sequence_number}++;
+        return $self->send_data;
+    }
+    elsif ($n < $self->{_sequence_number}) {
+        warn "[Mojo::TFTPd] <<< $self->{peerhost} duplicate ack $n\n" if DEBUG;
+        return 1;
+    }
+
+    warn "[Mojo::TFTPd] <<< $self->{peerhost} invalid ack $n <> $self->{_sequence_number}\n" if DEBUG;
     $self->error('Invalid packet number');
-    return $self->{retries}--;
+    return 0;
 }
 
 =head2 receive_data
@@ -193,9 +207,14 @@ sub receive_data {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
 
+    if ($n < $self->_sequence_number) {
+        warn "[Mojo::TFTPd] <<< $self->{peerhost} duplicate data $n\n" if DEBUG;
+        return 1;
+    }
     unless($n == $self->_sequence_number) {
+        warn "[Mojo::TFTPd] <<< $self->{peerhost} invalid data $n <> $self->{_sequence_number}\n" if DEBUG;
         $self->error('Invalid packet number');
-        return $self->{retries}--;
+        return 1;
     }
     unless(print $FH $data) {
         return $self->send_error(illegal_operation => "Write: $!");
@@ -207,9 +226,28 @@ sub receive_data {
     return $self->send_error(disk_full => 'tsize exceeded')
         if $self->filesize and $self->filesize < $self->blocksize * ($n-1) + length $data;
 
+    $self->{_attempt} = 0;
     $self->{_sequence_number}++;
-    return 1;
+    return $self->send_ack;
 }
+
+
+=head2 receive_error
+
+This method is called when the client sends ERROR to the server.
+
+=cut
+
+sub receive_error {
+    my $self = shift;
+    my($code, $msg) = unpack 'nZ*', shift;
+
+    warn "[Mojo::TFTPd] <<< $self->{peerhost} error $code $msg\n" if DEBUG;
+
+    $self->error("($code) $msg");
+    return 0;
+}
+
 
 =head2 send_ack
 
@@ -222,7 +260,6 @@ sub send_ack {
     my $n = $self->_sequence_number - 1;
     my $sent;
 
-    $self->{timestamp} = time;
     $self->{lastop} = OPCODE_ACK;
     warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $n\n" if DEBUG;
 
@@ -235,7 +272,7 @@ sub send_ack {
     return 0 if defined $self->{_last_sequence_number};
     return 1 if $sent;
     $self->error("Send: $!");
-    return $self->{retries}--;
+    return 0;
 }
 
 =head2 send_error
@@ -258,17 +295,27 @@ sub send_error {
         $self->peername,
     );
 
-    return 0;
+    # RFC 1350 says ERROR should not be ACKed, but we don't mind, since there are clients doing this
+    # Connection wlll be finished on next retransmit timeout
+    return 1;
 }
 
 
 =head2 send_oack
 
 Used to send RFC 2347 OACK to client
+
 Supported options are
-RFC 2348 blksize - report $self->blocksize
-RFC 2349 timeout - report $self->timeout
-RFC 2349 tsize - report $self->filesize if set inside the L<rrq|Mojo::TFTPd/rrq>
+
+=over
+
+=item RFC 2348 blksize - report $self->blocksize
+
+=item RFC 2349 timeout - report $self->timeout
+
+=item RFC 2349 tsize - report $self->filesize if set inside the L<rrq|Mojo::TFTPd/rrq>
+
+=back
 
 =cut
 
@@ -277,7 +324,6 @@ sub send_oack {
     my $self = shift;
     my $sent;
 
-    $self->{timestamp} = time;
     $self->{lastop} = OPCODE_OACK;
 
     my @options;
@@ -295,7 +341,38 @@ sub send_oack {
 
     return 1 if $sent;
     $self->error("Send: $!");
-    return $self->{retries}--;
+    return 0;
+}
+
+
+=head2 retransmit
+
+Used to retransmit last packet to the client.
+
+=cut
+
+sub retransmit {
+    my $self = shift;
+
+    return 0 unless $self->lastop;
+
+    # Errors are not retransmitted
+    return 0 if $self->lastop == OPCODE_ERROR;
+
+    if ($self->_attempt >= $self->retries) {
+        warn "[Mojo::TFTPd] >>> $self->{peerhost} retransmit $self->{_attempt} timeout\n" if DEBUG;
+        $self->error("retransmit timeout");
+        return 0;
+    }
+
+    $self->{_attempt} ++;
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} retransmit $self->{_attempt}\n" if DEBUG;
+
+    return $self->send_oack if $self->lastop eq OPCODE_OACK;
+    return $self->send_ack if $self->lastop eq OPCODE_ACK;
+    return $self->send_data if $self->lastop eq OPCODE_DATA;
+
+    return 0;
 }
 
 
