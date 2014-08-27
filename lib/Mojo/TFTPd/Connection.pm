@@ -209,7 +209,7 @@ sub receive_data {
 
     if ($n < $self->_sequence_number) {
         warn "[Mojo::TFTPd] <<< $self->{peerhost} duplicate data $n\n" if DEBUG;
-        return $self->send_ack($n);
+        return 1;
     }
     unless($n == $self->_sequence_number) {
         warn "[Mojo::TFTPd] <<< $self->{peerhost} invalid data $n <> $self->{_sequence_number}\n" if DEBUG;
@@ -257,7 +257,7 @@ This method is called when the server sends ACK to the client.
 
 sub send_ack {
     my $self = shift;
-    my $n = shift // $self->_sequence_number - 1;
+    my $n = $self->_sequence_number - 1;
     my $sent;
 
     $self->{lastop} = OPCODE_ACK;
