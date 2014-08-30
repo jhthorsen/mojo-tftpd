@@ -64,7 +64,7 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
     is $DATA, pack('nnZ*', Mojo::TFTPd::OPCODE_ERROR, 1, "File not found"), 'doesntexist result in error';
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
     $tftpd->_incoming;
-    is $finish[0][1], '', 'error on ack of error';
+    is $finish[0][1], 'File not found', 'error on ack of error';
 }
 
 {
@@ -75,7 +75,12 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
 
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 4);
     $tftpd->_incoming;
-    is $tftpd->{connections}{whatever}{retries}, 5, 'retrying';
+    is $tftpd->{connections}{whatever}{retries}, 5, 'rrq.bin retry 1';
+    is $DATA, pack('nna*', 3, 1, (1 x 511). "\n"), 'rrq.bin was sent again';
+
+    $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 4);
+    $tftpd->_incoming;
+    is $tftpd->{connections}{whatever}{retries}, 4, 'rrq.bin retry 2';
     is $DATA, pack('nna*', 3, 1, (1 x 511). "\n"), 'rrq.bin was sent again';
 
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
