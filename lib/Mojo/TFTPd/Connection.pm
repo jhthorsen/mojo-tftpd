@@ -158,7 +158,8 @@ sub send_data {
         $self->{_last_sequence_number} = $n;
     }
 
-    warn "[Mojo::TFTPd] >>> $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} data $n (@{[length $data]})" .
+        ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n" if DEBUG;
 
     $sent = $self->socket->send(
                 pack('nna*', OPCODE_DATA, $n, $data),
@@ -182,7 +183,8 @@ sub receive_ack {
     my $self = shift;
     my($n) = unpack 'n', shift;
 
-    warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n\n" if DEBUG;
+    warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n" .
+        ($n and $n != $self->_sequence_number ? " expected $self->{_sequence_number}" : '') . "\n" if DEBUG;
 
     return $self->send_data if $n == 0 and $self->lastop eq OPCODE_OACK;
     return 0 if $self->lastop eq OPCODE_ERROR;
@@ -211,7 +213,8 @@ sub receive_data {
     my($n, $data) = unpack 'na*', shift;
     my $FH = $self->filehandle;
 
-    warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
+    warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})" .
+        ($n != $self->_sequence_number ? " expected $self->{_sequence_number}" : '') . "\n" if DEBUG;
 
     unless($n == $self->_sequence_number) {
         return 1 if $self->retransmit and $n < $self->{_sequence_number};
@@ -245,7 +248,8 @@ sub send_ack {
     my $sent;
 
     $self->{lastop} = OPCODE_ACK;
-    warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $n\n" if DEBUG;
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $n" .
+        ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n" if DEBUG;
 
     $sent = $self->socket->send(
                 pack('nn', OPCODE_ACK, $n),
@@ -289,7 +293,7 @@ sub send_error {
     $self->{lastop} = OPCODE_ERROR;
     warn "[Mojo::TFTPd] >>> $self->{peerhost} error @$err\n" if DEBUG;
 
-    $self->error($_[2]);
+    $self->error($_[2] || $err->[1]) unless $self->error;
     $self->socket->send(
         pack('nnZ*', OPCODE_ERROR, @$err),
         MSG_DONTWAIT,
@@ -329,7 +333,8 @@ sub send_oack {
     push @options, 'timeout', $self->timeout if $self->rfc->{timeout};
     push @options, 'tsize', $self->filesize if exists $self->rfc->{tsize} and $self->filesize;
 
-    warn "[Mojo::TFTPd] >>> $self->{peerhost} oack @options\n" if DEBUG;
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} oack @options" .
+        ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n" if DEBUG;
 
     $sent = $self->socket->send(
                 pack('na*', OPCODE_OACK, join "\0", @options),
