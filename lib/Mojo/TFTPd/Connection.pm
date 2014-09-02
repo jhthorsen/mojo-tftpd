@@ -11,7 +11,7 @@ See L<Mojo::TFTPd>
 =cut
 
 use Mojo::Base -base;
-use Socket;
+use Socket();
 use constant OPCODE_DATA => 3;
 use constant OPCODE_ACK => 4;
 use constant OPCODE_ERROR => 5;
@@ -30,6 +30,14 @@ our %ERROR_CODES = (
     file_exists => [6, 'File already exists'],
     no_such_user => [7, 'No such user'],
 );
+
+BEGIN {
+    # do not use MSG_DONTWAIT on platforms that do not support it (Win32)
+    my $msg_dontwait = 0;
+    eval { $msg_dontwait = Socket::MSG_DONTWAIT };
+    sub MSG_DONTWAIT() { $msg_dontwait };
+}
+
 
 =head1 ATTRIBUTES
 
