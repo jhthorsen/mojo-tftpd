@@ -301,7 +301,7 @@ sub send_error {
     $self->{lastop} = OPCODE_ERROR;
     warn "[Mojo::TFTPd] >>> $self->{peerhost} error @$err\n" if DEBUG;
 
-    $self->error($_[2] || $err->[1]) unless $self->error;
+    $self->error($_[2]);
     $self->socket->send(
         pack('nnZ*', OPCODE_ERROR, @$err),
         MSG_DONTWAIT,

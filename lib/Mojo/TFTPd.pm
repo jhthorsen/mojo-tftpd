@@ -324,7 +324,7 @@ sub _new_request {
     $self->emit($type => $connection);
 
     if (!$connection->filehandle) {
-        $connection->send_error(file_not_found => $connection->error // 'No filehandle');
+        $connection->send_error(file_not_found => $connection->error || 'No filehandle');
         $keep = 1;
     }
     elsif ((%rfc and $connection->send_oack) 

@@ -62,7 +62,7 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
     is $DATA, pack('nnZ*', Mojo::TFTPd::OPCODE_ERROR, 1, "File not found"), 'doesntexist result in error';
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
     $tftpd->_incoming;
-    is $finish[0][1], 'File not found', 'error on ack of error';
+    is $finish[0][1], 'No filehandle', 'error on ack of error';
 }
 
 {
