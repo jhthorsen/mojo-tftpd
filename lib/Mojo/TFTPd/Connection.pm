@@ -192,7 +192,7 @@ sub receive_ack {
     my($n) = unpack 'n', shift;
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n" .
-        ($n and $n != $self->_sequence_number ? " expected $self->{_sequence_number}" : '') . "\n" if DEBUG;
+        ($n && $n != $self->_sequence_number ? " expected $self->{_sequence_number}" : '') . "\n" if DEBUG;
 
     return $self->send_data if $n == 0 and $self->lastop eq OPCODE_OACK;
     return 0 if $self->lastop eq OPCODE_ERROR;
