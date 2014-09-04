@@ -73,12 +73,7 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
 
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 4);
     $tftpd->_incoming;
-    is $tftpd->{connections}{whatever}{retries}, 5, 'rrq.bin retry 1';
-    is $DATA, pack('nna*', 3, 1, (1 x 511). "\n"), 'rrq.bin was sent again';
-
-    $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 4);
-    $tftpd->_incoming;
-    is $tftpd->{connections}{whatever}{retries}, 4, 'rrq.bin retry 2';
+    is $tftpd->{connections}{whatever}{retries}, 5, 'retrying';
     is $DATA, pack('nna*', 3, 1, (1 x 511). "\n"), 'rrq.bin was sent again';
 
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
