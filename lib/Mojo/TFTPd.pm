@@ -112,6 +112,17 @@ will be dropped.
 
 =head1 ATTRIBUTES
 
+=head2 connection_class
+
+  $str = $self->connection_class;
+  $self = $self->connection_class($str);
+
+Used to set a custom connection class. Defaults to L<Mojo::TFTPd::Connection>.
+
+=cut
+
+has connection_class => 'Mojo::TFTPd::Connection';
+
 =head2 ioloop
 
 Holds an instance of L<Mojo::IOLoop>.
@@ -272,7 +283,7 @@ sub _new_request {
     }
 
     my %rfc = @rfc;
-    $connection = Mojo::TFTPd::Connection->new(
+    $connection = $self->connection_class->new(
                         type => $type,
                         file => $file,
                         mode => $mode,

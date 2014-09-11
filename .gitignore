@@ -12,3 +12,4 @@ cover_db
 *.swp
 ~$
 /Mojo-TFTPd*tar.gz
+/local
