@@ -129,18 +129,15 @@ This method is called when the server sends DATA to the client.
 
 sub send_data {
     my $self = shift;
-    my $FH = $self->filehandle;
     my $n = $self->_sequence_number;
     my($data, $sent);
 
     $self->{timestamp} = time;
     $self->{lastop} = OPCODE_DATA;
 
-    if(not seek $FH, ($n - 1) * $self->blocksize, 0) {
-        return $self->send_error(file_not_found => "Seek: $!");
-    }
-    if(not defined read $FH, $data, $self->blocksize) {
-        return $self->send_error(file_not_found => "Read: $!");
+    local $! = 0;
+    if (!defined($data = $self->_get_chunk)) {
+      return $self->send_error(file_not_found => "$!" || 'Unable to read chunk from file.');
     }
     if(length $data < $self->blocksize) {
         $self->{_last_sequence_number} = $n;
@@ -272,7 +269,6 @@ RFC 2349 tsize - report $self->filesize if set inside the L<rrq|Mojo::TFTPd/rrq>
 
 =cut
 
-
 sub send_oack {
     my $self = shift;
     my $sent;
@@ -298,6 +294,20 @@ sub send_oack {
     return $self->{retries}--;
 }
 
+sub _get_chunk {
+  my $self = shift;
+  my $fh = $self->filehandle;
+  my $n = $self->_sequence_number;
+
+  if (UNIVERSAL::isa($fh, 'Mojo::Asset')) {
+    return $fh->get_chunk(($n - 1) * $self->blocksize, $self->blocksize);
+  }
+  else {
+    return unless seek $fh, ($n - 1) * $self->blocksize, 0;
+    return unless defined read $fh, my($data), $self->blocksize;
+    return $data;
+  }
+}
 
 =head1 AUTHOR
 

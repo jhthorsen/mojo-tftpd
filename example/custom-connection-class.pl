@@ -6,16 +6,9 @@ use Mojo::UserAgent;
   package Mojo::TFTPd::Connection::HTTP;
   use Mojo::Base 'Mojo::TFTPd::Connection';
 
-  sub receive_ack {
-    my $self = shift;
-    $self->{can_push_data} = 1;
-    $self->SUPER::receive_ack(@_);
-  }
-
   sub send_data {
     my $self = shift;
-
-    return 1 if exists $self->{http_buffer} and !length $self->{http_buffer};
+    return 1 if $self->{pause};
     return $self->SUPER::send_data(@_);
   }
 }
@@ -30,28 +23,19 @@ $tftpd->on(rrq => sub {
 
     if ($file =~ m!^https?://!) {
       my $tx = $ua->build_tx(GET => $file);
+
+      $c->{pause} = 1;
+      $c->filehandle($tx->res->content->asset);
       $tx->res->max_message_size(0);
 
-      $c->{http_buffer} = '';
-      $c->{can_push_data} = 1;
-      open my $FH, '<', \$c->{http_buffer} or die $!;
-      $c->filehandle($FH);
-
       Scalar::Util::weaken($c);
-
-      # send the remaining chunk
-      $tx->on(finish => sub { $c and $c->send_data; });
-
-      # stream HTTP chunks
-      $tx->res->content->unsubscribe('read')->on(read => sub {
-        my ($content, $bytes) = @_;
+      $ua->start($tx, sub {
+        my ($ua, $tx) = @_;
         return unless $c;
-        $c->{http_buffer} .= $bytes;
-        $c->send_data if delete $c->{can_push_data} and length($c->{http_buffer}) % $c->blocksize;
+        delete $c->{pause};
+        $c->filehandle($tx->res->content->asset);
+        $c->send_data;
       });
-
-      # callback is called when all data is fetched
-      $ua->start($tx, sub {});
     }
     else {
       # ...
