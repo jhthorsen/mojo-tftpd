@@ -195,7 +195,7 @@ sub receive_data {
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
 
-    unless($n == $self->_sequence_number) {
+    unless($n == $self->_sequence_number % ROLLOVER) {
         $self->error('Invalid packet number');
         return $self->{retries}--;
     }
@@ -229,7 +229,7 @@ sub send_ack {
     warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $n\n" if DEBUG;
 
     $sent = $self->socket->send(
-                pack('nn', OPCODE_ACK, $n),
+                pack('nn', OPCODE_ACK, $n % ROLLOVER),
                 MSG_DONTWAIT,
                 $self->peername,
             );
