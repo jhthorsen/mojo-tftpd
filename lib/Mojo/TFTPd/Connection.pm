@@ -119,6 +119,8 @@ has rfc => sub { {} };
 has socket => undef;
 has _sequence_number => 1;
 
+use constant ROLLOVER => 256 * 256;
+
 =head1 METHODS
 
 =head2 send_data
@@ -149,7 +151,7 @@ sub send_data {
     warn "[Mojo::TFTPd] >>> $self->{peerhost} data $n (@{[length $data]})\n" if DEBUG;
 
     $sent = $self->socket->send(
-                pack('nna*', OPCODE_DATA, $n, $data),
+                pack('nna*', OPCODE_DATA, $n % ROLLOVER, $data),
                 MSG_DONTWAIT,
                 $self->peername,
             );
@@ -174,8 +176,8 @@ sub receive_ack {
 
     return 1 if $n == 0 and $self->lastop eq OPCODE_OACK;
     return 0 if $self->lastop eq OPCODE_ERROR;
-    return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
-    return ++$self->{_sequence_number} if $n == $self->{_sequence_number};
+    return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number} % ROLLOVER;
+    return ++$self->{_sequence_number} if $n == $self->{_sequence_number} % ROLLOVER;
     $self->error('Invalid packet number');
     return $self->{retries}--;
 }
