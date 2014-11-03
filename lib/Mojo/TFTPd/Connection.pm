@@ -140,6 +140,8 @@ has socket => undef;
 has _attempt => 0;
 has _sequence_number => 1;
 
+use constant ROLLOVER => 256 * 256;
+
 =head1 METHODS
 
 =head2 send_data
@@ -170,7 +172,7 @@ sub send_data {
         ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n" if DEBUG;
 
     $sent = $self->socket->send(
-                pack('nna*', OPCODE_DATA, $n, $data),
+                pack('nna*', OPCODE_DATA, $n % ROLLOVER, $data),
                 MSG_DONTWAIT,
                 $self->peername,
             );
@@ -196,8 +198,8 @@ sub receive_ack {
 
     return $self->send_data if $n == 0 and $self->lastop eq OPCODE_OACK;
     return 0 if $self->lastop eq OPCODE_ERROR;
-    return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number};
-    if ($n == $self->{_sequence_number}) {
+    return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number} % ROLLOVER;
+    if ($n == $self->{_sequence_number} % ROLLOVER) {
         $self->{_attempt} = 0;
         $self->{_sequence_number}++;
         return $self->send_data;
@@ -224,7 +226,7 @@ sub receive_data {
     warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})" .
         ($n != $self->_sequence_number ? " expected $self->{_sequence_number}" : '') . "\n" if DEBUG;
 
-    unless($n == $self->_sequence_number) {
+    unless($n == $self->_sequence_number % ROLLOVER ) {
         return 1 if $self->retransmit and $n < $self->{_sequence_number};
         return $self->send_ack if $self->{retries}--;
         $self->error('Invalid packet number');
@@ -260,7 +262,7 @@ sub send_ack {
         ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n" if DEBUG;
 
     $sent = $self->socket->send(
-                pack('nn', OPCODE_ACK, $n),
+                pack('nn', OPCODE_ACK, $n % ROLLOVER),
                 MSG_DONTWAIT,
                 $self->peername,
             );
