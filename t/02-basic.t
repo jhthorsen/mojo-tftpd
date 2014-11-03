@@ -1,10 +1,8 @@
-BEGIN { $ENV{CHECK_INACTIVE_INTERVAL} = 0.001 }
 use strict;
 use warnings;
 use Test::More;
 use Mojo::TFTPd;
 
-plan skip_all => 'No idea if this works on windows' if $^O eq 'MSWin32';
 
 my $tftpd = Mojo::TFTPd->new(retries => 6);
 my(@error, @finish);
@@ -64,7 +62,7 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
     is $DATA, pack('nnZ*', Mojo::TFTPd::OPCODE_ERROR, 1, "File not found"), 'doesntexist result in error';
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
     $tftpd->_incoming;
-    is $finish[0][1], '', 'error on ack of error';
+    is $finish[0][1], 'No filehandle', 'error on ack of error';
 }
 
 {
