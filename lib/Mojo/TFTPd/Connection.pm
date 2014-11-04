@@ -158,12 +158,19 @@ sub send_data {
 
     $self->{lastop} = OPCODE_DATA;
 
-    if(not seek $FH, ($n - 1) * $self->blocksize, 0) {
-        return $self->send_error(file_not_found => "Seek: $!");
+    if (UNIVERSAL::isa($FH, 'Mojo::Asset')) {
+        $data = $FH->get_chunk(($n - 1) * $self->blocksize, $self->blocksize);
+        return $self->send_error(file_not_found => 'Unable to read chunk') unless defined $data;
     }
-    if(not defined read $FH, $data, $self->blocksize) {
-        return $self->send_error(file_not_found => "Read: $!");
+    else {
+        if(not seek $FH, ($n - 1) * $self->blocksize, 0) {
+            return $self->send_error(file_not_found => "Seek: $!");
+        }
+        if(not defined read $FH, $data, $self->blocksize) {
+            return $self->send_error(file_not_found => "Read: $!");
+        }
     }
+
     if(length $data < $self->blocksize) {
         $self->{_last_sequence_number} = $n;
     }
