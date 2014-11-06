@@ -239,9 +239,18 @@ sub receive_data {
         $self->error('Invalid packet number');
         return 0;
     }
-    unless(print $FH $data) {
-        return $self->send_error(illegal_operation => "Write: $!");
-    };
+
+    if (UNIVERSAL::isa($FH, 'Mojo::Asset')) {
+        local $!;
+        eval { $FH->add_chunk($data) };
+        return $self->send_error(illegal_operation => "Unable to add chunk $!") if $!;
+    }
+    else {
+        unless(print $FH $data) {
+            return $self->send_error(illegal_operation => "Write: $!");
+        }
+    }
+
     unless(length $data == $self->blocksize) {
         $self->{_last_sequence_number} = $n;
     }
