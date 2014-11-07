@@ -63,17 +63,18 @@ The filename the client requested to read or write.
 
 This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<wrq|Mojo::TFTPd/wrq>
 event or the connection will be dropped.
+Can be either L<Mojo::Asset> or filehandle.
 
 =head2 filesize
 
 This must be set inside the L<rrq|Mojo::TFTPd/rrq>
-to report tsize option if client requested
+to report "tsize" option if client requested.
 
-If set inside L<wrq|Mojo::TFTPd/wrq> limits maximum upload
-Set automatically on WRQ with tsize
+If set inside L<wrq|Mojo::TFTPd/wrq> limits maximum upload size.
+Set automatically on WRQ with "tsize" option.
 
 Can be used inside L<finish|Mojo::TFTPd/finish> for uploads
-to check if reported tsize and received data length match
+to check if reported "tsize" and received data length match.
 
 =head2 timeout
 
@@ -85,11 +86,11 @@ Last operation.
 
 =head2 mode
 
-Either "ascii", "octet" or empty string if unknown.
+Either "netascii", "octet" or empty string if unknown.
 
 =head2 peerhost
 
-The IP address of the remove client.
+The IP address of the remote client.
 
 =head2 peername
 
@@ -154,25 +155,33 @@ sub send_data {
     my $self = shift;
     my $FH = $self->filehandle;
     my $n = $self->_sequence_number;
+    my $seq = $n % ROLLOVER;
     my($data, $sent);
 
     $self->{lastop} = OPCODE_DATA;
 
-    if(not seek $FH, ($n - 1) * $self->blocksize, 0) {
-        return $self->send_error(file_not_found => "Seek: $!");
+    if (UNIVERSAL::isa($FH, 'Mojo::Asset')) {
+        $data = $FH->get_chunk(($n - 1) * $self->blocksize, $self->blocksize);
+        return $self->send_error(file_not_found => 'Unable to read chunk') unless defined $data;
     }
-    if(not defined read $FH, $data, $self->blocksize) {
-        return $self->send_error(file_not_found => "Read: $!");
+    else {
+        if(not seek $FH, ($n - 1) * $self->blocksize, 0) {
+            return $self->send_error(file_not_found => "Seek: $!");
+        }
+        if(not defined read $FH, $data, $self->blocksize) {
+            return $self->send_error(file_not_found => "Read: $!");
+        }
     }
+
     if(length $data < $self->blocksize) {
         $self->{_last_sequence_number} = $n;
     }
 
-    warn "[Mojo::TFTPd] >>> $self->{peerhost} data $n (@{[length $data]})" .
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} data $seq (@{[length $data]})" .
         ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n" if DEBUG;
 
     $sent = $self->socket->send(
-                pack('nna*', OPCODE_DATA, $n % ROLLOVER, $data),
+                pack('nna*', OPCODE_DATA, $seq, $data),
                 MSG_DONTWAIT,
                 $self->peername,
             );
@@ -192,20 +201,21 @@ This method is called when the client sends ACK to the server.
 sub receive_ack {
     my $self = shift;
     my($n) = unpack 'n', shift;
+    my $seq = $self->_sequence_number % ROLLOVER;
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n" .
-        ($n && $n != $self->_sequence_number ? " expected $self->{_sequence_number}" : '') . "\n" if DEBUG;
+        ($n && $n != $seq ? " expected $seq" : '') . "\n" if DEBUG;
 
     return $self->send_data if $n == 0 and $self->lastop eq OPCODE_OACK;
     return 0 if $self->lastop eq OPCODE_ERROR;
     return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number} % ROLLOVER;
-    if ($n == $self->{_sequence_number} % ROLLOVER) {
+    if ($n == $seq) {
         $self->{_attempt} = 0;
         $self->{_sequence_number}++;
         return $self->send_data;
     }
 
-    return 1 if $self->retransmit and $n < $self->{_sequence_number};
+    return 1 if $self->retransmit and $n < $seq;
 
     return $self->send_data if $self->{retries}--;
     $self->error('Invalid packet number');
@@ -222,19 +232,29 @@ sub receive_data {
     my $self = shift;
     my($n, $data) = unpack 'na*', shift;
     my $FH = $self->filehandle;
+    my $seq = $self->_sequence_number % ROLLOVER;
 
     warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})" .
-        ($n != $self->_sequence_number ? " expected $self->{_sequence_number}" : '') . "\n" if DEBUG;
+        ($n != $seq ? " expected $seq" : '') . "\n" if DEBUG;
 
-    unless($n == $self->_sequence_number % ROLLOVER ) {
-        return 1 if $self->retransmit and $n < $self->{_sequence_number};
+    unless ($n == $seq) {
+        return 1 if $self->retransmit and $n < $seq;
         return $self->send_ack if $self->{retries}--;
         $self->error('Invalid packet number');
         return 0;
     }
-    unless(print $FH $data) {
-        return $self->send_error(illegal_operation => "Write: $!");
-    };
+
+    if (UNIVERSAL::isa($FH, 'Mojo::Asset')) {
+        local $!;
+        eval { $FH->add_chunk($data) };
+        return $self->send_error(illegal_operation => "Unable to add chunk $!") if $!;
+    }
+    else {
+        unless(print $FH $data) {
+            return $self->send_error(illegal_operation => "Write: $!");
+        }
+    }
+
     unless(length $data == $self->blocksize) {
         $self->{_last_sequence_number} = $n;
     }
@@ -255,14 +275,15 @@ This method is called when the server sends ACK to the client.
 sub send_ack {
     my $self = shift;
     my $n = $self->_sequence_number - 1;
+    my $seq = $n % ROLLOVER;
     my $sent;
 
     $self->{lastop} = OPCODE_ACK;
-    warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $n" .
+    warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $seq" .
         ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n" if DEBUG;
 
     $sent = $self->socket->send(
-                pack('nn', OPCODE_ACK, $n % ROLLOVER),
+                pack('nn', OPCODE_ACK, $seq),
                 MSG_DONTWAIT,
                 $self->peername,
             );

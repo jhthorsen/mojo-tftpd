@@ -98,6 +98,7 @@ error. C<$error> will be an empty string on success.
 This event is emitted when a new read request arrives from a client. The
 callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
 will be dropped.
+L<Mojo::TFTPd::Connection/filehandle> can also be a L<Mojo::Asset> reference.
 
 =head2 wrq
 
@@ -108,8 +109,20 @@ will be dropped.
 This event is emitted when a new write request arrives from a client. The
 callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
 will be dropped.
+L<Mojo::TFTPd::Connection/filehandle> can also be a L<Mojo::Asset> reference.
 
 =head1 ATTRIBUTES
+
+=head2 connection_class
+
+  $str = $self->connection_class;
+  $self = $self->connection_class($str);
+
+Used to set a custom connection class. Defaults to L<Mojo::TFTPd::Connection>.
+
+=cut
+
+has connection_class => 'Mojo::TFTPd::Connection';
 
 =head2 ioloop
 
@@ -296,7 +309,7 @@ sub _new_request {
     }
 
     my %rfc = @rfc;
-    $connection = Mojo::TFTPd::Connection->new(
+    $connection = $self->connection_class->new(
                         type => $type,
                         file => $file,
                         mode => $mode,
@@ -381,7 +394,7 @@ sub DEMOLISH {
 
 =head1 AUTHOR
 
-Svetoslav Naydenov
+Svetoslav Naydenov - C<harryl@cpan.org>
 
 Jan Henning Thorsen - C<jhthorsen@cpan.org>
 

@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use Test::More;
 use Mojo::TFTPd;
-use File::Temp;
+use Mojo::Asset::Memory;
 
 my $ROLLOVER = 256 * 256;
 
@@ -17,29 +17,18 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
 $tftpd->on(
     wrq => sub {
         my ( $tftpd, $c ) = @_;
-        my $tmp = File::Temp->new(
-            TEMPLATE => 'wrqXXXXX',
-            UNLINK   => 1,
-            SUFFIX   => '.dat'
-        );
-        $c->filehandle($tmp);
+        $c->filehandle(Mojo::Asset::Memory->new);
     }
 );
 
 # create a "large" file for sending
-my $rrq = File::Temp->new(
-    TEMPLATE => 'rrqXXXXX',
-    UNLINK   => 1,
-    SUFFIX   => '.dat'
-);
-syswrite $rrq, chr( $_ % 256 ) x 13 for 1 .. $ROLLOVER + 3;
-$rrq->close;
+my $mem = Mojo::Asset::Memory->new;
+$mem->add_chunk(chr( $_ % 256 ) x 13) for 1 .. $ROLLOVER + 3;
 
 $tftpd->on(
     rrq => sub {
         my ( $tftpd, $c ) = @_;
-        open my $fh, '<', $rrq->filename;
-        $c->filehandle($fh);
+        $c->filehandle($mem);
     }
 );
 
@@ -72,7 +61,7 @@ $tftpd->{socket} = bless {}, 'Dummy::Handle';
 }
 
 # rollover for RRQ
-is -s $rrq->filename, 13 * ( $ROLLOVER + 3 ), "RRQ file size";
+is $mem->size, 13 * ( $ROLLOVER + 3 ), "RRQ file size";
 {
 
     $DATA = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "rrq.bin", "octet", "blksize", "13";
