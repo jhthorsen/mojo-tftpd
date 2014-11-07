@@ -13,36 +13,7 @@ our $DATA;
 $tftpd->on(error => sub { shift; push @error, [@_] });
 $tftpd->on(finish => sub { shift; push @finish, [@_] });
 
-{
-    is Mojo::TFTPd::OPCODE_RRQ, 1, 'OPCODE_RRQ';
-    is Mojo::TFTPd::OPCODE_WRQ, 2, 'OPCODE_WRQ';
-    is Mojo::TFTPd::OPCODE_DATA, 3, 'OPCODE_DATA';
-    is Mojo::TFTPd::OPCODE_ACK, 4, 'OPCODE_ACK';
-    is Mojo::TFTPd::OPCODE_ERROR, 5, 'OPCODE_ERROR';
-    is Mojo::TFTPd::OPCODE_OACK, 6, 'OPCODE_OACK';
-    is $tftpd->ioloop, Mojo::IOLoop->singleton, 'got Mojo::IOLoop';
-}
-
-{
-    $tftpd->{socket} = bless {}, 'Dummy::Handle';
-
-    local $! = 5;
-    $DATA = undef;
-    $tftpd->_incoming;
-    like $error[0][0], qr{^Read: }, 'Got read error';
-
-    $DATA = pack 'n', Mojo::TFTPd::OPCODE_ACK;
-    $tftpd->_incoming;
-    is $error[1][0], '127.0.0.1 has no connection', $error[1][0];
-
-    $DATA = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "rrq.bin", "ascii";
-    $tftpd->_incoming;
-    is $error[2][0], 'Cannot handle rrq requests', $error[2][0];
-
-    $DATA = pack('n', Mojo::TFTPd::OPCODE_WRQ) . join "\0", "rrq.bin", "ascii";
-    $tftpd->_incoming;
-    is $error[3][0], 'Cannot handle wrq requests', $error[3][0];
-}
+$tftpd->{socket} = bless {}, 'Dummy::Handle';
 
 {
     @error = ();
