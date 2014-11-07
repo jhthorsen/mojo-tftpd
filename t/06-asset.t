@@ -2,6 +2,7 @@ use strict;
 use warnings;
 use Test::More;
 use Mojo::TFTPd;
+use Mojo::Asset::Memory;
 use Mojo::Asset::File;
 
 
@@ -108,16 +109,18 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
 }
 
 {
+    my $received;
     @error = ();
     $tftpd->on(wrq => sub {
         my($tftpd, $c) = @_;
-        my $file = Mojo::Asset::File->new();
+        my $file = Mojo::Asset::Memory->new();
         $c->filehandle($file);
     });
 
     $tftpd->on(finish => sub {
         my($tftpd, $c) = @_;
-        $c->filehandle->move_to('t/data/' . $c->file);
+        #$c->filehandle->move_to('t/data/' . $c->file);
+        $received = $c->filehandle->slurp;
     });
 
     $DATA = pack('n', Mojo::TFTPd::OPCODE_WRQ) . join "\0", "test.swp", "ascii";
@@ -133,6 +136,9 @@ $tftpd->on(finish => sub { shift; push @finish, [@_] });
     $tftpd->_incoming;
     is $DATA, pack('nn', 4, 2), 'ack on a x 400';
     ok !$tftpd->{connections}{whatever}, 'wrq connection is completed';
+
+    ok length($received) == (512 + 400), 'received length ok';
+    ok $received eq "a" x (512 + 400), 'received ok';
 }
 
 {
