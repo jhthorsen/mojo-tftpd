@@ -98,6 +98,7 @@ error. C<$error> will be an empty string on success.
 This event is emitted when a new read request arrives from a client. The
 callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
 will be dropped.
+L<Mojo::TFTPd::Connection/filehandle> can also be a L<Mojo::Asset> reference.
 
 =head2 wrq
 
@@ -108,6 +109,7 @@ will be dropped.
 This event is emitted when a new write request arrives from a client. The
 callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
 will be dropped.
+L<Mojo::TFTPd::Connection/filehandle> can also be a L<Mojo::Asset> reference.
 
 =head1 ATTRIBUTES
 
@@ -392,7 +394,7 @@ sub DEMOLISH {
 
 =head1 AUTHOR
 
-Svetoslav Naydenov
+Svetoslav Naydenov - C<harryl@cpan.org>
 
 Jan Henning Thorsen - C<jhthorsen@cpan.org>
 

@@ -63,17 +63,18 @@ The filename the client requested to read or write.
 
 This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<wrq|Mojo::TFTPd/wrq>
 event or the connection will be dropped.
+Can be either L<Mojo::Asset> or filehandle.
 
 =head2 filesize
 
 This must be set inside the L<rrq|Mojo::TFTPd/rrq>
-to report tsize option if client requested
+to report "tsize" option if client requested.
 
-If set inside L<wrq|Mojo::TFTPd/wrq> limits maximum upload
-Set automatically on WRQ with tsize
+If set inside L<wrq|Mojo::TFTPd/wrq> limits maximum upload size.
+Set automatically on WRQ with "tsize" option.
 
 Can be used inside L<finish|Mojo::TFTPd/finish> for uploads
-to check if reported tsize and received data length match
+to check if reported "tsize" and received data length match.
 
 =head2 timeout
 
@@ -85,11 +86,11 @@ Last operation.
 
 =head2 mode
 
-Either "ascii", "octet" or empty string if unknown.
+Either "netascii", "octet" or empty string if unknown.
 
 =head2 peerhost
 
-The IP address of the remove client.
+The IP address of the remote client.
 
 =head2 peername
 
