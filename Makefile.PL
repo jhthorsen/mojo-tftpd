@@ -2,16 +2,19 @@
 use ExtUtils::MakeMaker;
 WriteMakefile(
   NAME => 'Mojo::TFTPd',
-  AUTHOR => 'Jan Henning Thorsen <jhthorsen@cpan.org>',
+  AUTHOR => [
+    'Svetoslav Naydenov <harryl@cpan.org>',
+    'Jan Henning Thorsen <jhthorsen@cpan.org>'
+    ],
   LICENSE => 'artistic_2',
   ABSTRACT_FROM => 'lib/Mojo/TFTPd.pm',
   VERSION_FROM => 'lib/Mojo/TFTPd.pm',
   EXE_FILES => [qw(  )],
   META_MERGE => {
     resources => {
-      bugtracker => 'https://github.com//github.com/jhthorsen/mojo-tftpd/issues',
-      homepage => 'https://github.com///github.com/jhthorsen/mojo-tftpd',
-      repository => 'https://github.com///github.com/jhthorsen/mojo-tftpd',
+      bugtracker => 'https://github.com/jhthorsen/mojo-tftpd/issues',
+      homepage => 'https://github.com/jhthorsen/mojo-tftpd',
+      repository => 'https://github.com/jhthorsen/mojo-tftpd.git',
     },
   },
   BUILD_REQUIRES => {

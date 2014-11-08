@@ -1,5 +1,12 @@
 Revision history for Mojo-TFTPd
 
+0.04     Sat Nov  8 05:21:26 2014
+       * Retransmit last packet on timeout
+       * Rollover support
+       * Custom Connection class
+       * win32 compatibility
+       * Support for Mojo::Asset for filehandle
+
 0.03     Wed Aug 13 16:19:51 2014
        * Add RFC 2347 TFTP Option Extension
        * Add RFC 2348 TFTP Blocksize Option

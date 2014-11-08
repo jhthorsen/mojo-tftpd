@@ -6,7 +6,7 @@ Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 =head1 VERSION
 
-0.03
+0.04
 
 =head1 SYNOPSIS
 
@@ -67,7 +67,7 @@ use constant MIN_BLOCK_SIZE => 8;
 use constant MAX_BLOCK_SIZE => 65464; # From RFC 2348
 use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 =head1 EVENTS
 

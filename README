@@ -2,7 +2,7 @@ NAME
     Mojo::TFTPd - Trivial File Transfer Protocol daemon
 
 VERSION
-    0.03
+    0.04
 
 SYNOPSIS
         use Mojo::TFTPd;
@@ -70,7 +70,8 @@ EVENTS
 
     This event is emitted when a new read request arrives from a client. The
     callback should set "filehandle" in Mojo::TFTPd::Connection or the
-    connection will be dropped.
+    connection will be dropped. "filehandle" in Mojo::TFTPd::Connection can
+    also be a Mojo::Asset reference.
 
   wrq
         $self->on(wrq => sub {
@@ -79,9 +80,17 @@ EVENTS
 
     This event is emitted when a new write request arrives from a client.
     The callback should set "filehandle" in Mojo::TFTPd::Connection or the
-    connection will be dropped.
+    connection will be dropped. "filehandle" in Mojo::TFTPd::Connection can
+    also be a Mojo::Asset reference.
 
 ATTRIBUTES
+  connection_class
+      $str = $self->connection_class;
+      $self = $self->connection_class($str);
+
+    Used to set a custom connection class. Defaults to
+    Mojo::TFTPd::Connection.
+
   ioloop
     Holds an instance of Mojo::IOLoop.
 
@@ -100,7 +109,17 @@ ATTRIBUTES
     before dropping the connection.
 
   inactive_timeout
-    How long a connection can stay idle before being dropped.
+    How long a connection can stay idle before being dropped. Default is 15
+    seconds.
+
+  retransmit
+    How many times the server should try to retransmit the last packet on
+    timeout before dropping the connection. Default is 0 (disable
+    retransmits)
+
+  retransmit_timeout
+    How long a connection can stay idle before last packet being
+    retransmitted. Default is 2 seconds.
 
 METHODS
   start
@@ -108,7 +127,7 @@ METHODS
     event will be emitted if the server fail to start.
 
 AUTHOR
-    Svetoslav Naydenov
+    Svetoslav Naydenov - "harryl@cpan.org"
 
     Jan Henning Thorsen - "jhthorsen@cpan.org"
 
