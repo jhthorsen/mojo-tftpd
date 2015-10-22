@@ -2,10 +2,7 @@
 use ExtUtils::MakeMaker;
 WriteMakefile(
   NAME => 'Mojo::TFTPd',
-  AUTHOR => [
-    'Svetoslav Naydenov <harryl@cpan.org>',
-    'Jan Henning Thorsen <jhthorsen@cpan.org>'
-    ],
+  AUTHOR => 'Jan Henning Thorsen <jhthorsen@cpan.org>',
   LICENSE => 'artistic_2',
   ABSTRACT_FROM => 'lib/Mojo/TFTPd.pm',
   VERSION_FROM => 'lib/Mojo/TFTPd.pm',
@@ -22,7 +19,7 @@ WriteMakefile(
 }
 ,
   PREREQ_PM => {
-  'Mojolicious' => '4.30'
+  'Mojolicious' => '6.00'
 }
 ,
   test => { TESTS => 't/*.t' },
