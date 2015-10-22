@@ -3,6 +3,7 @@ Revision history for perl distribution Mojo-TFTPd
 0.05 Not Released
  - Update basic repo files
  - Fix cpanfile
+ - Skip emitting error on EAGAIN and EINTR
 
 0.04 2014-11-08T05:21:26Z
  - Retransmit last packet on timeout

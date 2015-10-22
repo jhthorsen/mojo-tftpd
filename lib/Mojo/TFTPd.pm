@@ -57,6 +57,7 @@ L<Mojo::TFTPd::Connection>.
 use Mojo::Base 'Mojo::EventEmitter';
 use Mojo::IOLoop;
 use Mojo::TFTPd::Connection;
+use Errno qw( EAGAIN EINTR );
 use constant OPCODE_RRQ     => 1;
 use constant OPCODE_WRQ     => 2;
 use constant OPCODE_DATA    => 3;
@@ -211,7 +212,7 @@ sub start {
 
   warn "[Mojo::TFTPd] Listen to $host:$port\n" if DEBUG;
 
-  $socket = IO::Socket::INET->new(LocalAddr => $host, LocalPort => $port, Proto => 'udp',);
+  $socket = IO::Socket::INET->new(LocalAddr => $host, LocalPort => $port, Proto => 'udp');
 
   if (!$socket) {
     delete $self->{connections};
@@ -236,6 +237,7 @@ sub _incoming {
   my $keep = 0;
 
   if (!defined $read) {
+    return if $! == EAGAIN or $! == EINTR;
     return $self->emit(error => "Read: $!");
   }
 
