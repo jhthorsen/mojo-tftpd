@@ -57,15 +57,15 @@ L<Mojo::TFTPd::Connection>.
 use Mojo::Base 'Mojo::EventEmitter';
 use Mojo::IOLoop;
 use Mojo::TFTPd::Connection;
-use constant OPCODE_RRQ => 1;
-use constant OPCODE_WRQ => 2;
-use constant OPCODE_DATA => 3;
-use constant OPCODE_ACK => 4;
-use constant OPCODE_ERROR => 5;
-use constant OPCODE_OACK => 6;
+use constant OPCODE_RRQ     => 1;
+use constant OPCODE_WRQ     => 2;
+use constant OPCODE_DATA    => 3;
+use constant OPCODE_ACK     => 4;
+use constant OPCODE_ERROR   => 5;
+use constant OPCODE_OACK    => 6;
 use constant MIN_BLOCK_SIZE => 8;
-use constant MAX_BLOCK_SIZE => 65464; # From RFC 2348
-use constant DEBUG => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
+use constant MAX_BLOCK_SIZE => 65464;                            # From RFC 2348
+use constant DEBUG          => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
 our $VERSION = '0.04';
 
@@ -199,197 +199,198 @@ event will be emitted if the server fail to start.
 =cut
 
 sub start {
-    my $self = shift;
-    my $reactor = $self->ioloop->reactor;
-    my $socket;
+  my $self    = shift;
+  my $reactor = $self->ioloop->reactor;
+  my $socket;
 
-    $self->{connections} and return $self;
-    $self->{connections} = {};
+  $self->{connections} and return $self;
+  $self->{connections} = {};
 
-    # split $self->listen into host and port
-    my ($host, $port) = $self->_parse_listen;
+  # split $self->listen into host and port
+  my ($host, $port) = $self->_parse_listen;
 
-    warn "[Mojo::TFTPd] Listen to $host:$port\n" if DEBUG;
+  warn "[Mojo::TFTPd] Listen to $host:$port\n" if DEBUG;
 
-    $socket = IO::Socket::INET->new(
-                  LocalAddr => $host,
-                  LocalPort => $port,
-                  Proto => 'udp',
-              );
+  $socket = IO::Socket::INET->new(LocalAddr => $host, LocalPort => $port, Proto => 'udp',);
 
-    if(!$socket) {
-        delete $self->{connections};
-        return $self->emit(error => "Can't create listen socket: $!");
-    };
+  if (!$socket) {
+    delete $self->{connections};
+    return $self->emit(error => "Can't create listen socket: $!");
+  }
 
-    Scalar::Util::weaken($self);
+  Scalar::Util::weaken($self);
 
-    $socket->blocking(0);
-    $reactor->io($socket, sub { $self->_incoming });
-    $reactor->watch($socket, 1, 0); # watch read events
-    $self->{socket} = $socket;
+  $socket->blocking(0);
+  $reactor->io($socket, sub { $self->_incoming });
+  $reactor->watch($socket, 1, 0);    # watch read events
+  $self->{socket} = $socket;
 
-    return $self;
+  return $self;
 }
 
 sub _incoming {
-    my $self = shift;
-    my $socket = $self->{socket};
-    my $read = $socket->recv(my $datagram, MAX_BLOCK_SIZE + 4); # Add 4 Bytes of Opcode + Block#
-    my($opcode, $connection);
-    my $keep = 0;
+  my $self   = shift;
+  my $socket = $self->{socket};
+  my $read   = $socket->recv(my $datagram, MAX_BLOCK_SIZE + 4);    # Add 4 Bytes of Opcode + Block#
+  my ($opcode, $connection);
+  my $keep = 0;
 
-    if(!defined $read) {
-        return $self->emit(error => "Read: $!");
-    }
+  if (!defined $read) {
+    return $self->emit(error => "Read: $!");
+  }
 
-    $opcode = unpack 'n', substr $datagram, 0, 2, '';
+  $opcode = unpack 'n', substr $datagram, 0, 2, '';
 
-    # new connection
-    if($opcode eq OPCODE_RRQ) {
-        return $self->_new_request(rrq => $datagram);
-    }
-    elsif($opcode eq OPCODE_WRQ) {
-        return $self->_new_request(wrq => $datagram);
-    }
+  # new connection
+  if ($opcode eq OPCODE_RRQ) {
+    return $self->_new_request(rrq => $datagram);
+  }
+  elsif ($opcode eq OPCODE_WRQ) {
+    return $self->_new_request(wrq => $datagram);
+  }
 
-    # existing connection
-    $connection = $self->{connections}{$socket->peername};
+  # existing connection
+  $connection = $self->{connections}{$socket->peername};
 
-    if(!$connection) {
-        return $self->emit(error => "@{[$socket->peerhost]} has no connection");
-    }
+  if (!$connection) {
+    return $self->emit(error => "@{[$socket->peerhost]} has no connection");
+  }
 
-    # Stop retransmit/inactive timer
-    $self->ioloop->remove($connection->{timer});
-    delete $connection->{timer};
+  # Stop retransmit/inactive timer
+  $self->ioloop->remove($connection->{timer});
+  delete $connection->{timer};
 
 
-    if($opcode == OPCODE_ACK) {
-        $keep = $connection->receive_ack($datagram);
-    }
-    elsif($opcode == OPCODE_DATA) {
-        $keep = $connection->receive_data($datagram);
-    }
-    elsif($opcode == OPCODE_ERROR) {
-        $connection->receive_error($datagram);
-    }
-    else {
-        $connection->error('Unknown opcode');
-    }
+  if ($opcode == OPCODE_ACK) {
+    $keep = $connection->receive_ack($datagram);
+  }
+  elsif ($opcode == OPCODE_DATA) {
+    $keep = $connection->receive_data($datagram);
+  }
+  elsif ($opcode == OPCODE_ERROR) {
+    $connection->receive_error($datagram);
+  }
+  else {
+    $connection->error('Unknown opcode');
+  }
 
-    if ($keep) {
-        # restart retransmit/inactive timer
-        $connection->{timer} = $self->ioloop->recurring($connection->timeout => sub {
-            $connection->send_retransmit or $self->_delete_connection($connection);
-        });
-        return;
-    }
+  if ($keep) {
 
-    # if something goes wrong or finish with connection
-    $self->_delete_connection($connection);
+    # restart retransmit/inactive timer
+    $connection->{timer} = $self->ioloop->recurring(
+      $connection->timeout => sub {
+        $connection->send_retransmit or $self->_delete_connection($connection);
+      }
+    );
+    return;
+  }
+
+  # if something goes wrong or finish with connection
+  $self->_delete_connection($connection);
 }
 
 sub _new_request {
-    my($self, $type, $datagram) = @_;
-    my($file, $mode, @rfc) = split "\0", $datagram;
-    my $socket = $self->{socket};
-    my $connection;
-    my $keep = 0;
+  my ($self, $type, $datagram) = @_;
+  my ($file, $mode, @rfc) = split "\0", $datagram;
+  my $socket = $self->{socket};
+  my $connection;
+  my $keep = 0;
 
-    warn "[Mojo::TFTPd] <<< @{[$socket->peerhost]} $type $file $mode @rfc\n" if DEBUG;
+  warn "[Mojo::TFTPd] <<< @{[$socket->peerhost]} $type $file $mode @rfc\n" if DEBUG;
 
-    if(!$self->has_subscribers($type)) {
-        $self->emit(error => "Cannot handle $type requests");
-        return;
-    }
-    if($self->max_connections <= keys %{ $self->{connections} }) {
-        $self->emit(error => "Max connections ($self->{max_connections}) reached");
-        return;
-    }
+  if (!$self->has_subscribers($type)) {
+    $self->emit(error => "Cannot handle $type requests");
+    return;
+  }
+  if ($self->max_connections <= keys %{$self->{connections}}) {
+    $self->emit(error => "Max connections ($self->{max_connections}) reached");
+    return;
+  }
 
-    my %rfc = @rfc;
-    $connection = $self->connection_class->new(
-                        type => $type,
-                        file => $file,
-                        mode => $mode,
-                        peerhost => $socket->peerhost,
-                        peername => $socket->peername,
-                        retries => $self->retries,
-                        timeout => $self->retransmit ? $self->retransmit_timeout : $self->inactive_timeout,
-                        retransmit => $self->retransmit,
-                        rfc => \%rfc,
-                        socket => $socket,
-                    );
+  my %rfc = @rfc;
+  $connection = $self->connection_class->new(
+    type       => $type,
+    file       => $file,
+    mode       => $mode,
+    peerhost   => $socket->peerhost,
+    peername   => $socket->peername,
+    retries    => $self->retries,
+    timeout    => $self->retransmit ? $self->retransmit_timeout : $self->inactive_timeout,
+    retransmit => $self->retransmit,
+    rfc        => \%rfc,
+    socket     => $socket,
+  );
 
-    if ($rfc{blksize}) {
-        $rfc{blksize} = MIN_BLOCK_SIZE if $rfc{blksize} < MIN_BLOCK_SIZE;
-        $rfc{blksize} = MAX_BLOCK_SIZE if $rfc{blksize} > MAX_BLOCK_SIZE;
-        $connection->blocksize($rfc{blksize});
-    }
-    if ($rfc{timeout} and $rfc{timeout} >= 0 and $rfc{timeout} <= 255) {
-        $connection->timeout($rfc{timeout});
-    }
-    if ($type eq 'wrq' and $rfc{tsize}) {
-        $connection->filesize($rfc{tsize});
-    }
+  if ($rfc{blksize}) {
+    $rfc{blksize} = MIN_BLOCK_SIZE if $rfc{blksize} < MIN_BLOCK_SIZE;
+    $rfc{blksize} = MAX_BLOCK_SIZE if $rfc{blksize} > MAX_BLOCK_SIZE;
+    $connection->blocksize($rfc{blksize});
+  }
+  if ($rfc{timeout} and $rfc{timeout} >= 0 and $rfc{timeout} <= 255) {
+    $connection->timeout($rfc{timeout});
+  }
+  if ($type eq 'wrq' and $rfc{tsize}) {
+    $connection->filesize($rfc{tsize});
+  }
 
-    $self->emit($type => $connection);
+  $self->emit($type => $connection);
 
-    if (!$connection->filehandle) {
-        $connection->send_error(file_not_found => $connection->error || 'No filehandle');
-        $keep = 1;
-    }
-    elsif ((%rfc and $connection->send_oack) 
-        or $type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
-        $keep = 1;
-    }
+  if (!$connection->filehandle) {
+    $connection->send_error(file_not_found => $connection->error || 'No filehandle');
+    $keep = 1;
+  }
+  elsif ((%rfc and $connection->send_oack) or $type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
+    $keep = 1;
+  }
 
-    if ($keep) {
-        $self->{connections}{$connection->peername} = $connection;
-        # start retransmit/inactive timer
-        $connection->{timer} = $self->ioloop->recurring($connection->timeout => sub {
-            $connection->send_retransmit or $self->_delete_connection($connection);
-        });
-    }
-    else {
-        $self->emit(finish => $connection, $connection->error);
-    }
+  if ($keep) {
+    $self->{connections}{$connection->peername} = $connection;
+
+    # start retransmit/inactive timer
+    $connection->{timer} = $self->ioloop->recurring(
+      $connection->timeout => sub {
+        $connection->send_retransmit or $self->_delete_connection($connection);
+      }
+    );
+  }
+  else {
+    $self->emit(finish => $connection, $connection->error);
+  }
 }
 
 sub _parse_listen {
-    my $self = shift;
+  my $self = shift;
 
-    my ($scheme, $host, $port) = $self->listen =~ m!
+  my ($scheme, $host, $port) = $self->listen =~ m!
       (?: ([^:/]+) :// )?   # part before ://
       ([^:]*)               # everyting until a :
       (?: : (\d+) )?        # any digits after the :
     !xms;
 
-    # if scheme is set but no port, use scheme
-    $port = getservbyname($scheme, '') if $scheme && !defined $port;
+  # if scheme is set but no port, use scheme
+  $port = getservbyname($scheme, '') if $scheme && !defined $port;
 
-    # use port 69 as fallback
-    $port //= 69;
+  # use port 69 as fallback
+  $port //= 69;
 
-    # if host == '*', replace it with '0.0.0.0'
-    $host = '0.0.0.0' if $host eq '*';
+  # if host == '*', replace it with '0.0.0.0'
+  $host = '0.0.0.0' if $host eq '*';
 
-    return ($host, $port);
+  return ($host, $port);
 }
 
 sub _delete_connection {
-    my($self, $connection) = @_;
-    $self->ioloop->remove($connection->{timer}) if $connection->{timer};
-    delete $self->{connections}{$connection->peername};
-    $self->emit(finish => $connection, $connection->error);
+  my ($self, $connection) = @_;
+  $self->ioloop->remove($connection->{timer}) if $connection->{timer};
+  delete $self->{connections}{$connection->peername};
+  $self->emit(finish => $connection, $connection->error);
 }
 
 sub DEMOLISH {
-    my $self = shift;
-    my $reactor = eval { $self->ioloop->reactor } or return; # may be undef during global destruction
+  my $self = shift;
+  my $reactor = eval { $self->ioloop->reactor } or return;    # may be undef during global destruction
 
-    $reactor->remove($self->{socket}) if $self->{socket};
+  $reactor->remove($self->{socket}) if $self->{socket};
 }
 
 =head1 AUTHOR
