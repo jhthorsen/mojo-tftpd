@@ -38,7 +38,6 @@ BEGIN {
   sub MSG_DONTWAIT() {$msg_dontwait}
 }
 
-
 =head1 ATTRIBUTES
 
 =head2 type
@@ -205,6 +204,7 @@ sub receive_ack {
   return $self->send_data if $n == 0                        and $self->lastop eq OPCODE_OACK;
   return 0                if $self->lastop eq OPCODE_ERROR;
   return 0                if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number} % ROLLOVER;
+
   if ($n == $seq) {
     $self->{_attempt} = 0;
     $self->{_sequence_number}++;

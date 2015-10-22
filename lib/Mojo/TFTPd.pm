@@ -260,7 +260,6 @@ sub _incoming {
   $self->ioloop->remove($connection->{timer});
   delete $connection->{timer};
 
-
   if ($opcode == OPCODE_ACK) {
     $keep = $connection->receive_ack($datagram);
   }

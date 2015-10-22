@@ -3,6 +3,9 @@ use warnings;
 use Test::More;
 use Mojo::TFTPd;
 use Mojo::Asset::Memory;
+use Mojo::Util;
+
+sub d ($) { Mojo::Util::term_escape($_[0]) }
 
 my $ROLLOVER = 256 * 256;
 
@@ -45,14 +48,14 @@ $tftpd->{socket} = bless {}, 'Dummy::Handle';
   for my $n (1 .. $ROLLOVER - 2) {
     $DATA = pack('nna*', Mojo::TFTPd::OPCODE_DATA, $n, chr($n % 256) x 13);
     $tftpd->_incoming;
-    is $DATA, pack('nn', Mojo::TFTPd::OPCODE_ACK, $n), "packet $n received" if not $n % 4099;
+    is d $DATA, d(pack 'nn', Mojo::TFTPd::OPCODE_ACK, $n), "packet $n received" if not $n % 4099;
   }
 
   # test every packet around the rollover
   for my $n ($ROLLOVER - 1 .. $ROLLOVER + 3) {
     $DATA = pack('nna*', Mojo::TFTPd::OPCODE_DATA, $n, chr($n % 256) x 13);
     $tftpd->_incoming;
-    is $DATA, pack('nn', Mojo::TFTPd::OPCODE_ACK, $n % $ROLLOVER), "packet $n received";
+    is d $DATA, d(pack 'nn', Mojo::TFTPd::OPCODE_ACK, $n % $ROLLOVER), "packet $n received";
   }
 }
 
@@ -61,7 +64,7 @@ $tftpd->{socket} = bless {}, 'Dummy::Handle';
   is $mem->size, 13 * ($ROLLOVER + 3), "RRQ file size";
   $DATA = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "rrq.bin", "octet", "blksize", "13";
   $tftpd->_incoming;
-  is $DATA, pack('na*', Mojo::TFTPd::OPCODE_OACK, join "\0", "blksize", "13"), 'RRQ OACK all';
+  is d $DATA, d(pack 'na*', Mojo::TFTPd::OPCODE_OACK, join "\0", "blksize", "13"), 'RRQ OACK all';
   isa_ok $tftpd->{connections}{whatever}, 'Mojo::TFTPd::Connection';
 
   # ack start of transmission
@@ -70,14 +73,14 @@ $tftpd->{socket} = bless {}, 'Dummy::Handle';
   # these should be just fine, check every so often
   for my $n (1 .. $ROLLOVER - 2) {
     $tftpd->_incoming;
-    is $DATA, pack('nna*', Mojo::TFTPd::OPCODE_DATA, $n, chr($n % 256) x 13), "packet $n sent" if not $n % 4099;
+    is d $DATA, d(pack 'nna*', Mojo::TFTPd::OPCODE_DATA, $n, chr($n % 256) x 13), "packet $n sent" if not $n % 4099;
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, $n % $ROLLOVER);
   }
 
   # test every packet around the rollover
   for my $n ($ROLLOVER - 1 .. $ROLLOVER + 3) {
     $tftpd->_incoming;
-    is $DATA, pack('nna*', Mojo::TFTPd::OPCODE_DATA, $n, chr($n % 256) x 13), "packet $n sent";
+    is d $DATA, d(pack 'nna*', Mojo::TFTPd::OPCODE_DATA, $n, chr($n % 256) x 13), "packet $n sent";
     $DATA = pack('nn', Mojo::TFTPd::OPCODE_ACK, $n % $ROLLOVER);
   }
 }
