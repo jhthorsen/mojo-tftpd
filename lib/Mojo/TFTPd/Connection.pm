@@ -49,39 +49,6 @@ has type             => undef;
 has _attempt         => 0;
 has _sequence_number => 1;
 
-sub send_data {
-  my $self = shift;
-  $self->{lastop} = OPCODE_DATA;
-
-  my ($handle, $n, $data) = ($self->filehandle, $self->_sequence_number);
-  if (blessed $handle and $handle->isa('Mojo::Asset')) {
-    $data = $handle->get_chunk(($n - 1) * $self->blocksize, $self->blocksize);
-    return $self->send_error(file_not_found => 'Unable to read chunk') unless defined $data;
-  }
-  elsif (not seek $handle, ($n - 1) * $self->blocksize, 0) {
-    return $self->send_error(file_not_found => "Seek: $!");
-  }
-  elsif (not defined $handle->sysread($data, $self->blocksize)) {
-    return $self->send_error(file_not_found => "Read: $!");
-  }
-
-  if (length $data < $self->blocksize) {
-    $self->{last_sequence_number} = $n;
-  }
-
-  my $seq = $n % ROLLOVER;
-  DEBUG && warn sprintf "[Mojo::TFTPd] >>> %s data %s (%s) %s\n", $self->{peerhost}, $seq,
-    length $data, $self->_attempt ? "retransmit $self->{_attempt}" : '';
-
-  my $sent
-    = $self->socket->send(pack('nna*', OPCODE_DATA, $seq, $data), MSG_DONTWAIT, $self->peername);
-
-  return 0 unless length $data;
-  return 1 if $sent or $self->{retries}--;
-  $self->error("Send: $!");
-  return 0;
-}
-
 sub receive_ack {
   my $self = shift;
   my ($n)  = unpack 'n', shift;
@@ -142,6 +109,15 @@ sub receive_data {
   return $self->send_ack;
 }
 
+sub receive_error {
+  my $self = shift;
+  my ($code, $msg) = unpack 'nZ*', shift;
+
+  warn "[Mojo::TFTPd] <<< $self->{peerhost} error $code $msg\n" if DEBUG;
+  $self->error("($code) $msg");
+  return 0;
+}
+
 sub send_ack {
   my $self = shift;
   $self->{lastop} = OPCODE_ACK;
@@ -157,12 +133,36 @@ sub send_ack {
   return 0;
 }
 
-sub receive_error {
+sub send_data {
   my $self = shift;
-  my ($code, $msg) = unpack 'nZ*', shift;
+  $self->{lastop} = OPCODE_DATA;
 
-  warn "[Mojo::TFTPd] <<< $self->{peerhost} error $code $msg\n" if DEBUG;
-  $self->error("($code) $msg");
+  my ($handle, $n, $data) = ($self->filehandle, $self->_sequence_number);
+  if (blessed $handle and $handle->isa('Mojo::Asset')) {
+    $data = $handle->get_chunk(($n - 1) * $self->blocksize, $self->blocksize);
+    return $self->send_error(file_not_found => 'Unable to read chunk') unless defined $data;
+  }
+  elsif (not seek $handle, ($n - 1) * $self->blocksize, 0) {
+    return $self->send_error(file_not_found => "Seek: $!");
+  }
+  elsif (not defined $handle->sysread($data, $self->blocksize)) {
+    return $self->send_error(file_not_found => "Read: $!");
+  }
+
+  if (length $data < $self->blocksize) {
+    $self->{last_sequence_number} = $n;
+  }
+
+  my $seq = $n % ROLLOVER;
+  DEBUG && warn sprintf "[Mojo::TFTPd] >>> %s data %s (%s) %s\n", $self->{peerhost}, $seq,
+    length $data, $self->_attempt ? "retransmit $self->{_attempt}" : '';
+
+  my $sent
+    = $self->socket->send(pack('nna*', OPCODE_DATA, $seq, $data), MSG_DONTWAIT, $self->peername);
+
+  return 0 unless length $data;
+  return 1 if $sent or $self->{retries}--;
+  $self->error("Send: $!");
   return 0;
 }
 
@@ -181,8 +181,6 @@ sub send_error {
 
 sub send_oack {
   my $self = shift;
-  my $sent;
-
   $self->{lastop} = OPCODE_OACK;
 
   my @options;
@@ -194,9 +192,8 @@ sub send_oack {
     . ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n"
     if DEBUG;
 
-  $sent = $self->socket->send(pack('na*', OPCODE_OACK, join "\0", @options),
+  my $sent = $self->socket->send(pack('na*', OPCODE_OACK, join "\0", @options),
     MSG_DONTWAIT, $self->peername);
-
   return 1 if $sent or $self->{retries}--;
   $self->error("Send: $!");
   return 0;
@@ -224,7 +221,6 @@ sub send_retransmit {
   return $self->send_oack if $self->lastop eq OPCODE_OACK;
   return $self->send_ack  if $self->lastop eq OPCODE_ACK;
   return $self->send_data if $self->lastop eq OPCODE_DATA;
-
   return 0;
 }
 
@@ -244,29 +240,40 @@ See L<Mojo::TFTPd>
 
 =head2 type
 
+  $str = $connection->type;
+
 Type of connection rrq or wrq
 
 =head2 blocksize
 
-The negotiated blocksize.
-Default is 512 Byte.
+  $int = $connection->blocksize;
+
+The negotiated blocksize. Default is 512 Byte.
 
 =head2 error
+
+  $str = $connection->error;
 
 Useful to check inside L<Mojo::TFTPd/finish> events to see if anything has
 gone wrong. Holds a string describing the error.
 
 =head2 file
 
+  $str = $connection->file;
+
 The filename the client requested to read or write.
 
 =head2 filehandle
+
+  $fh = $connection->filehandle;
 
 This must be set inside the L<rrq|Mojo::TFTPd/rrq> or L<wrq|Mojo::TFTPd/wrq>
 event or the connection will be dropped.
 Can be either L<Mojo::Asset> or filehandle.
 
 =head2 filesize
+
+  $int = $connection->filesize;
 
 This must be set inside the L<rrq|Mojo::TFTPd/rrq>
 to report "tsize" option if client requested.
@@ -279,25 +286,37 @@ to check if reported "tsize" and received data length match.
 
 =head2 timeout
 
+  $num = $connection->timeout;
+
 Retransmit/Inactive timeout.
 
 =head2 lastop
+
+  $str = $connection->lastop;
 
 Last operation.
 
 =head2 mode
 
+  $str = $connection->mode;
+
 Either "netascii", "octet" or empty string if unknown.
 
 =head2 peerhost
+
+  $str = $connection->peerhost;
 
 The IP address of the remote client.
 
 =head2 peername
 
+  $bin = $connection->peername;
+
 Packet address of the remote client.
 
 =head2 retries
+
+  $int = $connection->retries;
 
 Number of times L</send_data>, L</send_ack> or L</send_oack> can be retried before the
 connection is dropped.
@@ -305,6 +324,8 @@ This value comes from L<Mojo::TFTPd/retries> or set inside L<rrq|Mojo::TFTPd/rrq
 events.
 
 =head2 retransmit
+
+  $int = $connection->retransmit;
 
 Number of times last operation (L</send_data>, L</send_ack> or L</send_oack>)
 to be retransmitted on timeout before the connection is dropped.
@@ -315,40 +336,57 @@ Retransmits are disabled if set to 0.
 
 =head2 socket
 
+  $fh = $connection->socket;
+
 The UDP handle to send data to.
 
 =head2 rfc
 
-Contains RFC 2347 options the client has provided. These options are stored
-in an hash ref.
+  $hash_ref = $connection->rfc;
+
+Contains RFC 2347 options the client has provided.
 
 =head1 METHODS
 
-=head2 send_data
-
-This method is called when the server sends DATA to the client.
-
 =head2 receive_ack
+
+  $bool = $connection->receive_ack($bytes);
 
 This method is called when the client sends ACK to the server.
 
 =head2 receive_data
 
+  $bool = $connection->receive_data($bytes);
+
 This method is called when the client sends DATA to the server.
-
-=head2 send_ack
-
-This method is called when the server sends ACK to the client.
 
 =head2 receive_error
 
+  $bool = $connection->receive_error($bytes);
+
 This method is called when the client sends ERROR to the server.
 
+=head2 send_ack
+
+  $bool = $connection->send_ack;
+
+This method is called when the server sends ACK to the client.
+
+=head2 send_data
+
+  $bool = $connection->send_data;
+
+This method is called when the server sends DATA to the client.
+
 =head2 send_error
+
+  $bool = $connection->send_error($key => $descr);
 
 Used to report error to the client.
 
 =head2 send_oack
+
+  $bool = $connection->send_oack;
 
 Used to send RFC 2347 OACK to client
 
@@ -356,20 +394,28 @@ Supported options are
 
 =over
 
-=item RFC 2348 blksize - report $self->blocksize
+=item RFC 2348 blksize
 
-=item RFC 2349 timeout - report $self->timeout
+Report L</blocksize>.
 
-=item RFC 2349 tsize - report $self->filesize if set inside the L<rrq|Mojo::TFTPd/rrq>
+=item RFC 2349 timeout
+
+Report L</timeout>.
+
+=item RFC 2349 tsize
+
+Report L</filesize> if set inside the L<rrq|Mojo::TFTPd/rrq>.
 
 =back
 
 =head2 send_retransmit
 
+  $bool = $connection->send_retransmit;
+
 Used to retransmit last packet to the client.
 
-=head1 AUTHOR
+=head1 SEE ALSO
 
-Jan Henning Thorsen - C<jhthorsen@cpan.org>
+L<Mojo::TFTPd>
 
 =cut
