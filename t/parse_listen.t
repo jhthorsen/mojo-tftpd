@@ -1,4 +1,5 @@
-use Test::More tests => 14;
+use Mojo::Base -strict;
+use Test::More;
 use Mojo::TFTPd;
 
 my $tftpd = Mojo::TFTPd->new;
@@ -39,4 +40,4 @@ $tftpd->listen('foo://1.1.1.1');
 is $host, '1.1.1.1', 'right host';
 is $port, 69,        'right port';
 
-
+done_testing;
