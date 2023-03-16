@@ -15,7 +15,7 @@ use constant OPCODE_OACK    => 6;
 use constant MIN_BLOCK_SIZE => 8;
 use constant MAX_BLOCK_SIZE => 65464;                      # From RFC 2348
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 has connection_class   => 'Mojo::TFTPd::Connection';
 has inactive_timeout   => 15;

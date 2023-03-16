@@ -1,6 +1,6 @@
 Revision history for perl distribution Mojo-TFTPd
 
-0.05 Not Released
+0.05 2023-03-16T13:22:04
  - Fix sending "\0" at end of OACK
  - Fix cpanfile
  - Update basic repo files
