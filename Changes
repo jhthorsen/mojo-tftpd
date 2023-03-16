@@ -1,8 +1,9 @@
 Revision history for perl distribution Mojo-TFTPd
 
 0.05 Not Released
- - Update basic repo files
+ - Fix sending "\0" at end of OACK
  - Fix cpanfile
+ - Update basic repo files
 
 0.04 2014-11-08T05:21:26Z
  - Retransmit last packet on timeout

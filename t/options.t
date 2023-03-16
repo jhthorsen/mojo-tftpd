@@ -32,14 +32,14 @@ subtest 'RRQ OACK invalid timeout' => sub {
 subtest 'RRQ OACK tsize' => sub {
   $SEND = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "rrq.bin", "octet", "tsize", "0";
   $tftpd->_incoming;
-  is $RECV, pack('na*', 6, join "\0", "tsize", "512"), 'RRQ OACK tsize';
+  is $RECV, pack('na*', 6, join "\0", "tsize", "512", ""), 'RRQ OACK tsize';
 };
 
 subtest 'RRQ OACK all' => sub {
   $SEND = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "rrq.bin", "octet", "tsize", "0",
     "blksize", "100", "timeout", "1", "multicast", "1";
   $tftpd->_incoming;
-  is $RECV, pack('na*', 6, join "\0", "blksize", "100", "timeout", "1", "tsize", "512"),
+  is $RECV, pack('na*', 6, join "\0", "blksize", "100", "timeout", "1", "tsize", "512", ""),
     'RRQ OACK all';
 };
 
@@ -55,7 +55,7 @@ subtest 'WRQ options' => sub {
   $SEND = pack('n', Mojo::TFTPd::OPCODE_WRQ) . join "\0", "test.swp", "octet", "tsize", "500",
     "blksize", "200";
   $tftpd->_incoming;
-  is $RECV, pack('na*', 6, join "\0", "blksize", "200", "tsize", "500"), 'WRQ OACK tsize';
+  is $RECV, pack('na*', 6, join "\0", "blksize", "200", "tsize", "500", ""), 'WRQ OACK tsize';
 
   $SEND = pack('nna*', Mojo::TFTPd::OPCODE_DATA, 1, ("a" x 200));
   $tftpd->_incoming;

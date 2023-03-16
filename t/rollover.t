@@ -37,7 +37,7 @@ subtest 'rollover for WRQ' => sub {
   $SEND = pack('n', Mojo::TFTPd::OPCODE_WRQ) . join "\0", "wrq.bin", "octet", "blksize", "13";
   $tftpd->_incoming;
   isa_ok $tftpd->{connections}{whatever}, 'Mojo::TFTPd::Connection';
-  is $RECV, pack('na*', 6, join "\0", "blksize", "13"), 'WRQ OACK all';
+  is $RECV, pack('na*', 6, join "\0", "blksize", "13", ""), 'WRQ OACK all';
 
   # these should be just fine, check every so often
   for my $n (1 .. $ROLLOVER - 2) {
@@ -58,7 +58,8 @@ subtest 'rollover for RRQ' => sub {
   is $mem->size, 13 * ($ROLLOVER + 3), "RRQ file size";
   $SEND = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "rrq.bin", "octet", "blksize", "13";
   $tftpd->_incoming;
-  is d $RECV, d(pack 'na*', Mojo::TFTPd::OPCODE_OACK, join "\0", "blksize", "13"), 'RRQ OACK all';
+  is d $RECV, d(pack 'na*', Mojo::TFTPd::OPCODE_OACK, join "\0", "blksize", "13", ""),
+    'RRQ OACK all';
   isa_ok $tftpd->{connections}{whatever}, 'Mojo::TFTPd::Connection';
 
   # ack start of transmission

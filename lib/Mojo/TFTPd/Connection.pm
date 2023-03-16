@@ -192,7 +192,7 @@ sub send_oack {
     . ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n"
     if DEBUG;
 
-  my $sent = $self->socket->send(pack('na*', OPCODE_OACK, join "\0", @options),
+  my $sent = $self->socket->send(pack('na*', OPCODE_OACK, join "\0", @options, ''),
     MSG_DONTWAIT, $self->peername);
   return 1 if $sent or $self->{retries}--;
   $self->error("Send: $!");

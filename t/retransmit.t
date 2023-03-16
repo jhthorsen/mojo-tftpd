@@ -37,7 +37,7 @@ subtest 'retransmit' => sub {
     "tsize", "0";
   $tftpd->_incoming;
   isa_ok $tftpd->{connections}{whatever}, 'Mojo::TFTPd::Connection';
-  is $RECV, pack('na*', 6, join "\0", "blksize", "200", "tsize", "512"), 'RRQ OACK all';
+  is $RECV, pack('na*', 6, join "\0", "blksize", "200", "tsize", "512", ""), 'RRQ OACK all';
 
   $SEND = pack('nn', Mojo::TFTPd::OPCODE_ACK, 0);
   $tftpd->_incoming;
