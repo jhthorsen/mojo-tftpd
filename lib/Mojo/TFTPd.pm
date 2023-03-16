@@ -340,10 +340,21 @@ dropping the L<connection|Mojo::TFTPd::Connection>.
 Starts listening to the address and port set in L</Listen>. The L</error>
 event will be emitted if the server fail to start.
 
-=head1 AUTHOR
+=head1 AUTHORS
+
+Jan Henning Thorsen - C<jhthorsen@cpan.org>
+
+Per Carlson - C<pelle@hemmop.com>
+
+Philippe Bruhat (BooK) - C<book@cpan.org>
 
 Svetoslav Naydenov - C<harryl@cpan.org>
 
-Jan Henning Thorsen - C<jhthorsen@cpan.org>
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) Jan Henning Thorsen.
+
+This program is free software, you can redistribute it and/or modify it under
+the terms of the Artistic License version 2.0.
 
 =cut

@@ -27,7 +27,11 @@ my %WriteMakefileArgs = (
       repository => {type => 'git', url => "$GITHUB_URL.git", web => $GITHUB_URL},
       x_IRC => {url => 'irc://irc.libera.chat/#convos', web => 'https://web.libera.chat/#convos'},
     },
-    'x_contributors' => [],
+    'x_contributors' => [
+      'Per Carlson <pelle@hemmop.com>',
+      'Philippe Bruhat (BooK) <book@cpan.org>',
+      'Svetoslav Naydenov <harryl@cpan.org>',
+    ],
   },
   test => {TESTS => (-e 'META.yml' ? 't/*.t' : 't/*.t xt/*.t')},
 );
