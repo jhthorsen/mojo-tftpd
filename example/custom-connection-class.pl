@@ -4,6 +4,7 @@ use Mojo::TFTPd;
 use Mojo::UserAgent;
 
 {
+
   package Mojo::TFTPd::Connection::HTTP;
   use Mojo::Base 'Mojo::TFTPd::Connection';
 
@@ -15,10 +16,12 @@ use Mojo::UserAgent;
 }
 
 package main;
-my $tftpd = Mojo::TFTPd->new(listen => 'localhost:7000', connection_class => 'Mojo::TFTPd::Connection::HTTP');
+my $tftpd = Mojo::TFTPd->new(listen => 'localhost:7000',
+  connection_class => 'Mojo::TFTPd::Connection::HTTP');
 my $ua = Mojo::UserAgent->new;
 
-$tftpd->on(rrq => sub {
+$tftpd->on(
+  rrq => sub {
     my ($tftpd, $c) = @_;
     my $file = $c->file;
 
@@ -30,13 +33,16 @@ $tftpd->on(rrq => sub {
       $tx->res->max_message_size(0);
 
       Scalar::Util::weaken($c);
-      $ua->start($tx, sub {
-        my ($ua, $tx) = @_;
-        return unless $c;
-        delete $c->{pause};
-        $c->filehandle($tx->res->content->asset);
-        $c->send_data;
-      });
+      $ua->start(
+        $tx,
+        sub {
+          my ($ua, $tx) = @_;
+          return unless $c;
+          delete $c->{pause};
+          $c->filehandle($tx->res->content->asset);
+          $c->send_data;
+        }
+      );
     }
     else {
       # ...
