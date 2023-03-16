@@ -1,59 +1,4 @@
 package Mojo::TFTPd;
-
-=head1 NAME
-
-Mojo::TFTPd - Trivial File Transfer Protocol daemon
-
-=head1 VERSION
-
-0.04
-
-=head1 SYNOPSIS
-
-    use Mojo::TFTPd;
-    my $tftpd = Mojo::TFTPd->new;
-
-    $tftpd->on(error => sub {
-        warn "TFTPd: $_[1]\n";
-    });
-
-    $tftpd->on(rrq => sub {
-        my($tftpd, $c) = @_;
-        open my $FH, '<', $c->file;
-        $c->filehandle($FH);
-        $c->filesize(-s $c->file);
-    });
-
-    $tftpd->on(wrq => sub {
-        my($tftpd, $c) = @_;
-        open my $FH, '>', '/dev/null';
-        $c->filehandle($FH);
-    });
-
-    $tftpd->on(finish => sub {
-        my($tftpd, $c, $error) = @_;
-        warn "Connection: $error\n" if $error;
-    });
-
-    $tftpd->start;
-    $tftpd->ioloop->start unless $tftpd->ioloop->is_running;
-
-=head1 DESCRIPTION
-
-This module implements a server for the
-L<Trivial File Transfer Protocol|http://en.wikipedia.org/wiki/Trivial_File_Transfer_Protocol>.
-
-From Wikipedia:
-
-    Trivial File Transfer Protocol (TFTP) is a file transfer protocol notable
-    for its simplicity. It is generally used for automated transfer of
-    configuration or boot files between machines in a local environment.
-
-The connection ($c) which is referred to in this document is an instance of
-L<Mojo::TFTPd::Connection>.
-
-=cut
-
 use Mojo::Base 'Mojo::EventEmitter';
 use Mojo::IOLoop;
 use Mojo::TFTPd::Connection;
@@ -69,134 +14,14 @@ use constant DEBUG          => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 
 our $VERSION = '0.04';
 
-=head1 EVENTS
-
-=head2 error
-
-    $self->on(error => sub {
-        my($self, $str) = @_;
-    });
-
-This event is emitted when something goes wrong: Fail to L</listen> to socket,
-read from socket or other internal errors.
-
-=head2 finish
-
-    $self->on(finish => sub {
-        my($self, $c, $error) = @_;
-    });
-
-This event is emitted when the client finish, either successfully or due to an
-error. C<$error> will be an empty string on success.
-
-=head2 rrq
-
-    $self->on(rrq => sub {
-        my($self, $c) = @_;
-    });
-
-This event is emitted when a new read request arrives from a client. The
-callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
-will be dropped.
-L<Mojo::TFTPd::Connection/filehandle> can also be a L<Mojo::Asset> reference.
-
-=head2 wrq
-
-    $self->on(wrq => sub {
-        my($self, $c) = @_;
-    });
-
-This event is emitted when a new write request arrives from a client. The
-callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
-will be dropped.
-L<Mojo::TFTPd::Connection/filehandle> can also be a L<Mojo::Asset> reference.
-
-=head1 ATTRIBUTES
-
-=head2 connection_class
-
-  $str = $self->connection_class;
-  $self = $self->connection_class($str);
-
-Used to set a custom connection class. Defaults to L<Mojo::TFTPd::Connection>.
-
-=cut
-
-has connection_class => 'Mojo::TFTPd::Connection';
-
-=head2 ioloop
-
-Holds an instance of L<Mojo::IOLoop>.
-
-=cut
-
-has ioloop => sub { Mojo::IOLoop->singleton };
-
-=head2 listen
-
-    $str = $self->server;
-    $self->server("127.0.0.1:69");
-    $self->server("tftp://*:69"); # any interface
-
-The bind address for this server.
-
-=cut
-
-has listen => 'tftp://*:69';
-
-=head2 max_connections
-
-How many concurrent connections this server can handle. Default to 1000.
-
-=cut
-
-has max_connections => 1000;
-
-=head2 retries
-
-How many times the server should try to send ACK or DATA to the client before
-dropping the L<connection|Mojo::TFTPd::Connection>.
-
-=cut
-
-has retries => 1;
-
-=head2 inactive_timeout
-
-How long a L<connection|Mojo::TFTPd::Connection> can stay idle before
-being dropped. Default is 15 seconds.
-
-=cut
-
-has inactive_timeout => 15;
-
-=head2 retransmit
-
-How many times the server should try to retransmit the last packet on timeout before
-dropping the L<connection|Mojo::TFTPd::Connection>. Default is 0 (disable retransmits)
-
-=cut
-
-has retransmit => 0;
-
-=head2 retransmit_timeout
-
-How long a L<connection|Mojo::TFTPd::Connection> can stay idle before last packet 
-being retransmitted. Default is 2 seconds.
-
-=cut
-
+has connection_class   => 'Mojo::TFTPd::Connection';
+has ioloop             => sub { Mojo::IOLoop->singleton };
+has listen             => 'tftp://*:69';
+has max_connections    => 1000;
+has retries            => 1;
+has inactive_timeout   => 15;
+has retransmit         => 0;
 has retransmit_timeout => 2;
-
-
-=head1 METHODS
-
-=head2 start
-
-Starts listening to the address and port set in L</Listen>. The L</error>
-event will be emitted if the server fail to start.
-
-=cut
 
 sub start {
   my $self    = shift;
@@ -226,6 +51,13 @@ sub start {
   $self->{socket} = $socket;
 
   return $self;
+}
+
+sub _delete_connection {
+  my ($self, $connection) = @_;
+  $self->ioloop->remove($connection->{timer}) if $connection->{timer};
+  delete $self->{connections}{$connection->peername};
+  $self->emit(finish => $connection, $connection->error);
 }
 
 sub _incoming {
@@ -338,7 +170,9 @@ sub _new_request {
     $connection->send_error(file_not_found => $connection->error || 'No filehandle');
     $keep = 1;
   }
-  elsif ((%rfc and $connection->send_oack) or $type eq 'rrq' ? $connection->send_data : $connection->send_ack) {
+  elsif ((%rfc and $connection->send_oack)
+    or $type eq 'rrq' ? $connection->send_data : $connection->send_ack)
+  {
     $keep = 1;
   }
 
@@ -378,19 +212,162 @@ sub _parse_listen {
   return ($host, $port);
 }
 
-sub _delete_connection {
-  my ($self, $connection) = @_;
-  $self->ioloop->remove($connection->{timer}) if $connection->{timer};
-  delete $self->{connections}{$connection->peername};
-  $self->emit(finish => $connection, $connection->error);
-}
-
 sub DEMOLISH {
-  my $self = shift;
-  my $reactor = eval { $self->ioloop->reactor } or return;    # may be undef during global destruction
+  my $self    = shift;
+  my $reactor = eval { $self->ioloop->reactor } or return;  # may be undef during global destruction
 
   $reactor->remove($self->{socket}) if $self->{socket};
 }
+
+1;
+
+=encoding utf8
+
+=head1 NAME
+
+Mojo::TFTPd - Trivial File Transfer Protocol daemon
+
+=head1 VERSION
+
+0.04
+
+=head1 SYNOPSIS
+
+    use Mojo::TFTPd;
+    my $tftpd = Mojo::TFTPd->new;
+
+    $tftpd->on(error => sub {
+        warn "TFTPd: $_[1]\n";
+    });
+
+    $tftpd->on(rrq => sub {
+        my($tftpd, $c) = @_;
+        open my $FH, '<', $c->file;
+        $c->filehandle($FH);
+        $c->filesize(-s $c->file);
+    });
+
+    $tftpd->on(wrq => sub {
+        my($tftpd, $c) = @_;
+        open my $FH, '>', '/dev/null';
+        $c->filehandle($FH);
+    });
+
+    $tftpd->on(finish => sub {
+        my($tftpd, $c, $error) = @_;
+        warn "Connection: $error\n" if $error;
+    });
+
+    $tftpd->start;
+    $tftpd->ioloop->start unless $tftpd->ioloop->is_running;
+
+=head1 DESCRIPTION
+
+This module implements a server for the
+L<Trivial File Transfer Protocol|http://en.wikipedia.org/wiki/Trivial_File_Transfer_Protocol>.
+
+From Wikipedia:
+
+    Trivial File Transfer Protocol (TFTP) is a file transfer protocol notable
+    for its simplicity. It is generally used for automated transfer of
+    configuration or boot files between machines in a local environment.
+
+The connection ($c) which is referred to in this document is an instance of
+L<Mojo::TFTPd::Connection>.
+
+=head1 EVENTS
+
+=head2 error
+
+    $self->on(error => sub {
+        my($self, $str) = @_;
+    });
+
+This event is emitted when something goes wrong: Fail to L</listen> to socket,
+read from socket or other internal errors.
+
+=head2 finish
+
+    $self->on(finish => sub {
+        my($self, $c, $error) = @_;
+    });
+
+This event is emitted when the client finish, either successfully or due to an
+error. C<$error> will be an empty string on success.
+
+=head2 rrq
+
+    $self->on(rrq => sub {
+        my($self, $c) = @_;
+    });
+
+This event is emitted when a new read request arrives from a client. The
+callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
+will be dropped.
+L<Mojo::TFTPd::Connection/filehandle> can also be a L<Mojo::Asset> reference.
+
+=head2 wrq
+
+    $self->on(wrq => sub {
+        my($self, $c) = @_;
+    });
+
+This event is emitted when a new write request arrives from a client. The
+callback should set L<Mojo::TFTPd::Connection/filehandle> or the connection
+will be dropped.
+L<Mojo::TFTPd::Connection/filehandle> can also be a L<Mojo::Asset> reference.
+
+=head1 ATTRIBUTES
+
+=head2 connection_class
+
+  $str = $self->connection_class;
+  $self = $self->connection_class($str);
+
+Used to set a custom connection class. Defaults to L<Mojo::TFTPd::Connection>.
+
+=head2 ioloop
+
+Holds an instance of L<Mojo::IOLoop>.
+
+=head2 listen
+
+    $str = $self->server;
+    $self->server("127.0.0.1:69");
+    $self->server("tftp://*:69"); # any interface
+
+The bind address for this server.
+
+=head2 max_connections
+
+How many concurrent connections this server can handle. Default to 1000.
+
+=head2 retries
+
+How many times the server should try to send ACK or DATA to the client before
+dropping the L<connection|Mojo::TFTPd::Connection>.
+
+=head2 inactive_timeout
+
+How long a L<connection|Mojo::TFTPd::Connection> can stay idle before
+being dropped. Default is 15 seconds.
+
+=head2 retransmit
+
+How many times the server should try to retransmit the last packet on timeout before
+dropping the L<connection|Mojo::TFTPd::Connection>. Default is 0 (disable retransmits)
+
+=head2 retransmit_timeout
+
+How long a L<connection|Mojo::TFTPd::Connection> can stay idle before last packet
+being retransmitted. Default is 2 seconds.
+
+=head1 METHODS
+
+=head2 start
+
+Starts listening to the address and port set in L</Listen>. The L</error>
+event will be emitted if the server fail to start.
 
 =head1 AUTHOR
 
@@ -399,5 +376,3 @@ Svetoslav Naydenov - C<harryl@cpan.org>
 Jan Henning Thorsen - C<jhthorsen@cpan.org>
 
 =cut
-
-1;
