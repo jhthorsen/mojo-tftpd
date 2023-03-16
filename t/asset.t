@@ -5,11 +5,10 @@ use Mojo::Asset::Memory;
 use Mojo::Asset::File;
 
 my $tftpd = Mojo::TFTPd->new(retries => 6);
-my (@error, @finish);
+my @error;
 our ($RECV, $SEND);
 
-$tftpd->on(error  => sub { shift; push @error,  [@_] });
-$tftpd->on(finish => sub { shift; push @finish, [@_] });
+$tftpd->on(error => sub { note "Err! $_[1]"; push @error, $_[1] });
 
 $tftpd->{socket} = bless {}, 'Dummy::Handle';
 
@@ -25,18 +24,19 @@ subtest 'only subscribed to "rrq" events' => sub {
 
   $SEND = pack('n', Mojo::TFTPd::OPCODE_WRQ) . join "\0", "rrq.bin", "ascii";
   $tftpd->_incoming;
-  is $error[0][0], 'Cannot handle wrq requests', 'Can only handle rrq requests';
+  is "@error", 'Cannot handle wrq requests', 'Can only handle rrq requests';
 };
 
 subtest 'rrq file not found' => sub {
-  $SEND = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "doesntexist", "ascii";
+  @error = ();
+  $SEND  = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "doesntexist", "ascii";
   $tftpd->_incoming;
-  ok $tftpd->{connections}{whatever}, 'rrq connection does not exists on invalid file';
+  ok !$tftpd->{connections}{whatever}, 'rrq connection does not exists on invalid file';
   is $RECV, pack('nnZ*', Mojo::TFTPd::OPCODE_ERROR, 1, "File not found"),
     'doesntexist result in error';
   $SEND = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
   $tftpd->_incoming;
-  is $finish[0][1], 'No filehandle', 'error on ack of error';
+  like "@error", qr{has no connection}, 'error on ack of error';
 };
 
 subtest 'rrq empty data with retry' => sub {
@@ -117,6 +117,9 @@ subtest 'wrq memory file' => sub {
   ok length($received) == (512 + 400), 'received length ok';
   ok $received eq "a" x (512 + 400), 'received ok';
 };
+
+note 'Cannot cleanup Dummy::Handle';
+delete $tftpd->{socket};
 
 done_testing;
 

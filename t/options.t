@@ -3,15 +3,12 @@ use Test::More;
 use Mojo::TFTPd;
 
 my $tftpd = Mojo::TFTPd->new(retries => 6);
-my (@error, @finish);
 our ($RECV, $SEND);
 
-$tftpd->on(error  => sub { shift; push @error,  [@_] });
-$tftpd->on(finish => sub { shift; push @finish, [@_] });
+$tftpd->on(error => sub { note "Err! $_[1]" });
 
 subtest 'OACK cannot be empty' => sub {
   $tftpd->{socket} = bless {}, 'Dummy::Handle';
-  @error = ();
   $tftpd->on(
     rrq => sub {
       my ($tftpd, $c) = @_;
@@ -47,7 +44,6 @@ subtest 'RRQ OACK all' => sub {
 };
 
 subtest 'WRQ options' => sub {
-  @error = ();
   $tftpd->on(
     wrq => sub {
       my ($tftpd, $c) = @_;
@@ -74,6 +70,9 @@ subtest 'WRQ options' => sub {
   is $RECV, pack('nnZ*', 5, 3, 'Disk full or allocation exceeded'), 'ack on a x 200';
   ok !$tftpd->{connections}{whatever}, 'wrq connection is completed';
 };
+
+note 'Cannot cleanup Dummy::Handle';
+delete $tftpd->{socket};
 
 done_testing;
 

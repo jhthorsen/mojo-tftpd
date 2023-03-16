@@ -4,11 +4,10 @@ use Test::More;
 use Mojo::TFTPd;
 
 my $tftpd = Mojo::TFTPd->new(retries => 6, retransmit => 1);
-my (@error, @finish);
+my @error;
 our ($RECV, $SEND);
 
-$tftpd->on(error  => sub { shift; push @error,  [@_] });
-$tftpd->on(finish => sub { shift; push @finish, [@_] });
+$tftpd->on(error => sub { note "Err! $_[1]"; push @error, $_[1] });
 
 subtest 'error on ack of error' => sub {
   $tftpd->{socket} = bless {}, 'Dummy::Handle';
@@ -25,12 +24,12 @@ subtest 'error on ack of error' => sub {
   $SEND = pack('n', Mojo::TFTPd::OPCODE_RRQ) . join "\0", "doesntexist", "ascii";
   $tftpd->_incoming;
 
-  ok $tftpd->{connections}{whatever}, 'rrq connection does not exists on invalid file';
+  ok !$tftpd->{connections}{whatever}, 'rrq connection does not exists on invalid file';
   is $RECV, pack('nnZ*', Mojo::TFTPd::OPCODE_ERROR, 1, "File not found"),
     'doesntexist result in error';
   $SEND = pack('nn', Mojo::TFTPd::OPCODE_ACK, 1);
   $tftpd->_incoming;
-  is $finish[0][1], 'No filehandle', 'error on ack of error';
+  like "@error", qr{has no connection}, 'error on ack of error';
 };
 
 subtest 'retransmit' => sub {
@@ -72,6 +71,9 @@ subtest 'retransmit' => sub {
   $tftpd->_incoming;
   is $tftpd->{connections}{whatever}{retries}, 4, 'rrq.bin seq 1 no retransmit';
 };
+
+note 'Cannot cleanup Dummy::Handle';
+delete $tftpd->{socket};
 
 done_testing;
 

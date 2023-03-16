@@ -6,12 +6,11 @@ use Mojo::Util;
 
 sub d ($) { Mojo::Util::term_escape($_[0]) }
 
-my $tftpd = Mojo::TFTPd->new(retries => 6, retransmit => 1);
-my ($ROLLOVER, @error, @finish) = (256 * 256);
+my $tftpd    = Mojo::TFTPd->new(retries => 6, retransmit => 1);
+my $ROLLOVER = 256 * 256;
 our ($RECV, $SEND);
 
-$tftpd->on(error  => sub { shift; push @error,  [@_] });
-$tftpd->on(finish => sub { shift; push @finish, [@_] });
+$tftpd->on(error => sub { note "Err! $_[1]" });
 
 note 'save WRQ to a temporary file, to be deleted';
 $tftpd->on(
@@ -80,6 +79,9 @@ subtest 'rollover for RRQ' => sub {
     $SEND = pack('nn', Mojo::TFTPd::OPCODE_ACK, $n % $ROLLOVER);
   }
 };
+
+note 'Cannot cleanup Dummy::Handle';
+delete $tftpd->{socket};
 
 done_testing;
 

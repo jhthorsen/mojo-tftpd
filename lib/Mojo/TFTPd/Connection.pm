@@ -1,11 +1,14 @@
 package Mojo::TFTPd::Connection;
 use Mojo::Base -base;
+
 use Socket();
+use Scalar::Util qw(blessed);
+
+use constant DEBUG        => !!$ENV{MOJO_TFTPD_DEBUG};
 use constant OPCODE_DATA  => 3;
 use constant OPCODE_ACK   => 4;
 use constant OPCODE_ERROR => 5;
 use constant OPCODE_OACK  => 6;
-use constant DEBUG        => $ENV{MOJO_TFTPD_DEBUG} ? 1 : 0;
 use constant ROLLOVER     => 256 * 256;
 
 our %ERROR_CODES = (
@@ -28,56 +31,50 @@ BEGIN {
   sub MSG_DONTWAIT() {$msg_dontwait}
 }
 
-has type             => undef;
 has blocksize        => 512;
 has error            => '';
 has file             => '/dev/null';
 has filehandle       => undef;
 has filesize         => undef;
-has timeout          => undef;
 has lastop           => undef;
 has mode             => '';
 has peerhost         => '';
 has peername         => '';
-has retries          => 2;
 has retransmit       => 0;
-has rfc              => sub { {} };
+has retries          => 2;
+has rfc              => sub { +{} };
 has socket           => undef;
+has timeout          => undef;
+has type             => undef;
 has _attempt         => 0;
 has _sequence_number => 1;
 
 sub send_data {
   my $self = shift;
-  my $FH   = $self->filehandle;
-  my $n    = $self->_sequence_number;
-  my $seq  = $n % ROLLOVER;
-  my ($data, $sent);
-
   $self->{lastop} = OPCODE_DATA;
 
-  if (UNIVERSAL::isa($FH, 'Mojo::Asset')) {
-    $data = $FH->get_chunk(($n - 1) * $self->blocksize, $self->blocksize);
+  my ($handle, $n, $data) = ($self->filehandle, $self->_sequence_number);
+  if (blessed $handle and $handle->isa('Mojo::Asset')) {
+    $data = $handle->get_chunk(($n - 1) * $self->blocksize, $self->blocksize);
     return $self->send_error(file_not_found => 'Unable to read chunk') unless defined $data;
   }
-  else {
-    if (not seek $FH, ($n - 1) * $self->blocksize, 0) {
-      return $self->send_error(file_not_found => "Seek: $!");
-    }
-    if (not defined read $FH, $data, $self->blocksize) {
-      return $self->send_error(file_not_found => "Read: $!");
-    }
+  elsif (not seek $handle, ($n - 1) * $self->blocksize, 0) {
+    return $self->send_error(file_not_found => "Seek: $!");
+  }
+  elsif (not defined $handle->sysread($data, $self->blocksize)) {
+    return $self->send_error(file_not_found => "Read: $!");
   }
 
   if (length $data < $self->blocksize) {
-    $self->{_last_sequence_number} = $n;
+    $self->{last_sequence_number} = $n;
   }
 
-  warn "[Mojo::TFTPd] >>> $self->{peerhost} data $seq (@{[length $data]})"
-    . ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n"
-    if DEBUG;
+  my $seq = $n % ROLLOVER;
+  DEBUG && warn sprintf "[Mojo::TFTPd] >>> %s data %s (%s) %s\n", $self->{peerhost}, $seq,
+    length $data, $self->_attempt ? "retransmit $self->{_attempt}" : '';
 
-  $sent
-    = $self->socket->send(pack('nna*', OPCODE_DATA, $seq, $data), MSG_DONTWAIT, $self->peername,);
+  my $sent
+    = $self->socket->send(pack('nna*', OPCODE_DATA, $seq, $data), MSG_DONTWAIT, $self->peername);
 
   return 0 unless length $data;
   return 1 if $sent or $self->{retries}--;
@@ -90,13 +87,12 @@ sub receive_ack {
   my ($n)  = unpack 'n', shift;
   my $seq  = $self->_sequence_number % ROLLOVER;
 
-  warn "[Mojo::TFTPd] <<< $self->{peerhost} ack $n"
-    . ($n && $n != $seq ? " expected $seq" : '') . "\n"
-    if DEBUG;
+  DEBUG && warn "[Mojo::TFTPd] <<< %s ack %s %s\n", $self->peerhost, $n,
+    ($n && $n != $seq ? "expected $seq" : '');
 
   return $self->send_data if $n == 0 and $self->lastop eq OPCODE_OACK;
   return 0                if $self->lastop eq OPCODE_ERROR;
-  return 0 if $self->{_last_sequence_number} and $n == $self->{_last_sequence_number} % ROLLOVER;
+  return 0 if $self->{last_sequence_number} and $n == $self->{last_sequence_number} % ROLLOVER;
 
   if ($n == $seq) {
     $self->{_attempt} = 0;
@@ -104,8 +100,7 @@ sub receive_ack {
     return $self->send_data;
   }
 
-  return 1 if $self->retransmit and $n < $seq;
-
+  return 1                if $self->retransmit and $n < $seq;
   return $self->send_data if $self->{retries}--;
   $self->error('Invalid packet number');
   return 0;
@@ -114,12 +109,10 @@ sub receive_ack {
 sub receive_data {
   my $self = shift;
   my ($n, $data) = unpack 'na*', shift;
-  my $FH  = $self->filehandle;
   my $seq = $self->_sequence_number % ROLLOVER;
 
-  warn "[Mojo::TFTPd] <<< $self->{peerhost} data $n (@{[length $data]})"
-    . ($n != $seq ? " expected $seq" : '') . "\n"
-    if DEBUG;
+  DEBUG && warn "[Mojo::TFTPd] <<< %s data %s (%s) %s\n", $self->peerhost, $n, length $data,
+    ($n != $seq ? " expected $seq" : '');
 
   unless ($n == $seq) {
     return 1               if $self->retransmit and $n < $seq;
@@ -128,19 +121,18 @@ sub receive_data {
     return 0;
   }
 
-  if (UNIVERSAL::isa($FH, 'Mojo::Asset')) {
+  my $handle = $self->filehandle;
+  if (blessed $handle and $handle->isa('Mojo::Asset')) {
     local $!;
-    eval { $FH->add_chunk($data) };
+    eval { $handle->add_chunk($data) };
     return $self->send_error(illegal_operation => "Unable to add chunk $!") if $!;
   }
-  else {
-    unless (print $FH $data) {
-      return $self->send_error(illegal_operation => "Write: $!");
-    }
+  elsif (!$handle->syswrite($data)) {
+    return $self->send_error(illegal_operation => "Write: $!");
   }
 
   unless (length $data == $self->blocksize) {
-    $self->{_last_sequence_number} = $n;
+    $self->{last_sequence_number} = $n;
   }
 
   return $self->send_error(disk_full => 'tsize exceeded')
@@ -152,18 +144,14 @@ sub receive_data {
 
 sub send_ack {
   my $self = shift;
-  my $n    = $self->_sequence_number - 1;
-  my $seq  = $n % ROLLOVER;
-  my $sent;
-
   $self->{lastop} = OPCODE_ACK;
-  warn "[Mojo::TFTPd] >>> $self->{peerhost} ack $seq"
-    . ($self->_attempt ? " retransmit $self->{_attempt}" : '') . "\n"
-    if DEBUG;
 
-  $sent = $self->socket->send(pack('nn', OPCODE_ACK, $seq), MSG_DONTWAIT, $self->peername,);
+  my $seq = ($self->_sequence_number - 1) % ROLLOVER;
+  DEBUG && warn "[Mojo::TFTPd] <<< %s ack %s %s\n", $self->peerhost, $seq,
+    ($self->_attempt ? " retransmit $self->{_attempt}" : '');
 
-  return 0 if defined $self->{_last_sequence_number};
+  my $sent = $self->socket->send(pack('nn', OPCODE_ACK, $seq), MSG_DONTWAIT, $self->peername);
+  return 0 if defined $self->{last_sequence_number};
   return 1 if $sent or $self->{retries}--;
   $self->error("Send: $!");
   return 0;
@@ -174,7 +162,6 @@ sub receive_error {
   my ($code, $msg) = unpack 'nZ*', shift;
 
   warn "[Mojo::TFTPd] <<< $self->{peerhost} error $code $msg\n" if DEBUG;
-
   $self->error("($code) $msg");
   return 0;
 }
@@ -187,7 +174,7 @@ sub send_error {
   warn "[Mojo::TFTPd] >>> $self->{peerhost} error @$err\n" if DEBUG;
 
   $self->error($_[2]);
-  $self->socket->send(pack('nnZ*', OPCODE_ERROR, @$err), MSG_DONTWAIT, $self->peername,);
+  $self->socket->send(pack('nnZ*', OPCODE_ERROR, @$err), MSG_DONTWAIT, $self->peername);
 
   return 0;
 }
@@ -208,7 +195,7 @@ sub send_oack {
     if DEBUG;
 
   $sent = $self->socket->send(pack('na*', OPCODE_OACK, join "\0", @options),
-    MSG_DONTWAIT, $self->peername,);
+    MSG_DONTWAIT, $self->peername);
 
   return 1 if $sent or $self->{retries}--;
   $self->error("Send: $!");
@@ -217,7 +204,6 @@ sub send_oack {
 
 sub send_retransmit {
   my $self = shift;
-
   return 0 unless $self->lastop;
 
   unless ($self->retransmit) {

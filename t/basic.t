@@ -3,11 +3,10 @@ use Test::More;
 use Mojo::TFTPd;
 
 my $tftpd = Mojo::TFTPd->new(retries => 6);
-my (@error, @finish);
+my @error;
 our ($RECV, $SEND);
 
-$tftpd->on(error  => sub { shift; push @error,  [@_] });
-$tftpd->on(finish => sub { shift; push @finish, [@_] });
+$tftpd->on(error => sub { shift; note "Err! @_"; push @error, [@_] });
 
 subtest 'constants' => sub {
   is Mojo::TFTPd::OPCODE_RRQ,   1,                       'OPCODE_RRQ';
@@ -104,7 +103,7 @@ subtest 'wrq data' => sub {
   ok !$tftpd->{connections}{whatever}, 'wrq connection is completed';
 };
 
-subtest '' => sub {
+subtest 'max connections' => sub {
   @error = ();
   local $tftpd->{connections}{anything} = 1;
   local $tftpd->{max_connections} = 1;
@@ -112,6 +111,17 @@ subtest '' => sub {
   $tftpd->_incoming;
   is $error[0][0], 'Max connections (1) reached', $error[0][0];
 };
+
+subtest 'destroy' => sub {
+  no warnings qw(redefine);
+  my $removed = 0;
+  local *Mojo::Reactor::Poll::remove = sub { $removed++ };
+  undef $tftpd;
+  is $removed, 1, 'removed filehandle';
+};
+
+note 'Cannot cleanup Dummy::Handle';
+delete $tftpd->{socket};
 
 done_testing;
 
